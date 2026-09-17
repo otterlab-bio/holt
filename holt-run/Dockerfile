@@ -93,6 +93,7 @@ RUN chown otter-pup:otter-pup /home/otter-pup/.ssh/authorized_keys && \
 
 # ===== 阶段 7: 全局安装 AI 开发工具与 uv =====
 RUN npm install -g @openai/codex @anthropic-ai/claude-code opencode-ai droid && \
+    (which claude >/dev/null 2>&1 && ln -sf "$(which claude)" /usr/local/bin/claude-code || true) && \
     npm cache clean --force && \
     rm -rf /tmp/* /root/.npm /root/.node_modules
 

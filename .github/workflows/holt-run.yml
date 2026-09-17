@@ -42,4 +42,4 @@ jobs:
       - name: Verify built image
         run: |
           docker run --rm ghcr.io/otterlab-bio/holt-run:latest \
-            sh -c "otter --version && enva --version && jupyter-lab --version && claude-code --version && whoami"
+            sh -c "otter --version && enva --version && jupyter-lab --version && (claude --version || claude-code --version) && whoami"
