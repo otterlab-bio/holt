@@ -1,0 +1,21 @@
+services:
+  holt-build:
+    build:
+      context: ./holt-build
+    image: fallingstar10/holt-build:latest
+    container_name: holt-build
+    stdin_open: true
+    tty: true
+
+  holt-run:
+    build:
+      context: ./holt-run
+    image: fallingstar10/holt-run:latest
+    container_name: holt-run
+    ports:
+      - "2222:2222"
+      - "8889:8889"
+      - "8080:8080"
+      - "8787:8787"
+    stdin_open: true
+    tty: true
