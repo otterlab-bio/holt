@@ -70,7 +70,8 @@ RUN mkdir -p ${MAMBA_ROOT_PREFIX} && \
     chown -R otter-pup:otter-pup ${MAMBA_ROOT_PREFIX} /opt/otter
 
 # ===== 阶段 6: SSH 服务与 otter-pup 用户配置 =====
-RUN mkdir -p /var/run/sshd /home/otter-pup/.ssh && \
+RUN ssh-keygen -A && \
+    mkdir -p /var/run/sshd /home/otter-pup/.ssh && \
     chown -R otter-pup:otter-pup /home/otter-pup/.ssh && \
     chmod 700 /home/otter-pup/.ssh
 
@@ -131,14 +132,30 @@ RUN cat > /usr/local/bin/start-services.sh <<'EOF'
 #!/usr/bin/env bash
 set -e
 
-# 生成 SSH 主机密钥
+# 如果传入了自定义命令，直接执行自定义命令
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
+
+# 生成 SSH 主机密钥 (若缺失)
 for key in rsa ecdsa ed25519; do
-    [ ! -f /etc/ssh/ssh_host_${key}_key ] && ssh-keygen -t $key -f /etc/ssh/ssh_host_${key}_key -N "" -q
+    if [ ! -f /etc/ssh/ssh_host_${key}_key ]; then
+        if [ "$EUID" -eq 0 ]; then
+            ssh-keygen -t $key -f /etc/ssh/ssh_host_${key}_key -N "" -q
+        else
+            sudo ssh-keygen -t $key -f /etc/ssh/ssh_host_${key}_key -N "" -q
+        fi
+    fi
 done
 
 echo "--- 启动 SSH 服务 ---"
-/usr/sbin/sshd -D &
-SSH_PID=$!
+if [ "$EUID" -eq 0 ]; then
+    /usr/sbin/sshd -D &
+    SSH_PID=$!
+else
+    sudo /usr/sbin/sshd -D &
+    SSH_PID=$!
+fi
 
 echo "--- Holt 运行环境服务已就绪 ---"
 echo "SSH 访问: ssh otter-pup@localhost -p 2222 (默认密码: otter-pup)"
@@ -155,7 +172,7 @@ echo "用户管理工具："
 echo "  sudo add-user"
 
 # 等待 SSH 服务退出
-trap 'kill -9 $SSH_PID 2>/dev/null' TERM INT QUIT
+trap 'sudo kill -9 $SSH_PID 2>/dev/null || kill -9 $SSH_PID 2>/dev/null' TERM INT QUIT
 wait $SSH_PID
 EOF
 
