@@ -65,29 +65,36 @@ RUN RHOME="$(R RHOME)" && \
     grep -q '^R_LIBS_USER=' "$RHOME/etc/Renviron.site" || \
       echo 'R_LIBS_USER=~/.local/share/R/%p-library/%V' >> "$RHOME/etc/Renviron.site"
 
-# 安装 Rust
-RUN pacman -S --noconfirm rustup && \
+# 安装 Rust 并配置系统级共享工具链（所有人可用）
+ENV RUSTUP_HOME=/opt/rustup \
+    CARGO_HOME=/opt/cargo
+ENV PATH=/home/otter-pup/go/bin:/home/otter-pup/.cargo/bin:/home/otter-pup/.local/bin:/opt/cargo/bin:/root/go/bin:$PATH
+
+RUN pacman -S --needed --noconfirm rustup && \
+    mkdir -p /opt/rustup /opt/cargo && \
     rustup default stable && \
+    chmod -R a+rwX /opt/rustup /opt/cargo && \
     pacman -Sc --noconfirm && \
     rm -rf /var/cache/pacman/pkg/* /tmp/*
 
 # 配置环境变量与工作目录
 ENV GOPATH=/home/otter-pup/go
-ENV PATH=/home/otter-pup/go/bin:/home/otter-pup/.cargo/bin:/home/otter-pup/.local/bin:/root/.cargo/bin:/root/go/bin:$PATH
 
 # 为 otter-pup 初始化环境
 RUN mkdir -p /home/otter-pup/go/bin /home/otter-pup/.local/bin /home/otter-pup/.cargo/bin && \
     echo 'export GOPATH=$HOME/go' >> /home/otter-pup/.bashrc && \
-    echo 'export PATH=$HOME/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH' >> /home/otter-pup/.bashrc && \
+    echo 'export RUSTUP_HOME=/opt/rustup' >> /home/otter-pup/.bashrc && \
+    echo 'export CARGO_HOME=/opt/cargo' >> /home/otter-pup/.bashrc && \
+    echo 'export PATH=$HOME/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:/opt/cargo/bin:$PATH' >> /home/otter-pup/.bashrc && \
     chown -R otter-pup:otter-pup /home/otter-pup
 
-# 验证语言环境安装
-RUN python --version && R --version && node --version && npm --version && \
-    rustc --version && cargo --version && go version
-
-# 设置默认用户
+# 设置默认用户并验证
 USER otter-pup
 WORKDIR /home/otter-pup
+
+# 验证当前用户身份与安装可用性
+RUN python --version && R --version && node --version && npm --version && \
+    rustc --version && cargo --version && go version && whoami
 
 CMD ["/bin/bash"]
 

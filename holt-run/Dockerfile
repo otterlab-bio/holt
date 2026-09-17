@@ -100,10 +100,12 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL="/usr/
     rm -rf /tmp/* /root/.cache/*
 
 # ===== 阶段 8: 环境变量与终端配置 =====
-ENV MAMBA_ROOT_PREFIX=/opt/conda \
+ENV RUSTUP_HOME=/opt/rustup \
+    CARGO_HOME=/opt/cargo \
+    MAMBA_ROOT_PREFIX=/opt/conda \
     OTTER_HOME=/opt/otter \
     OTTER_CORE_PREFIX=/opt/conda/envs/otter-core \
-    PATH=/opt/otter/bin:/opt/conda/envs/otter-core/bin:/home/otter-pup/go/bin:/home/otter-pup/.cargo/bin:/home/otter-pup/.local/bin:/root/.cargo/bin:/root/go/bin:$PATH \
+    PATH=/opt/otter/bin:/opt/conda/envs/otter-core/bin:/home/otter-pup/go/bin:/home/otter-pup/.cargo/bin:/home/otter-pup/.local/bin:/opt/cargo/bin:/root/go/bin:$PATH \
     GOPATH=/home/otter-pup/go \
     CRYPTOGRAPHY_OPENSSL_NO_LEGACY=1 \
     JAVA_OPTS="-Djava.awt.headless=true" \
@@ -112,11 +114,15 @@ ENV MAMBA_ROOT_PREFIX=/opt/conda \
     FACTORY_API_KEY=fk-uapnTYzc3bZ0zc5hWNmH-GebxIzVDVnbHQ8NGGEFuxoDNBmWYS2MxEkI5tgl3123
 
 # 为 root 用户配置 .bashrc
-RUN echo "export PATH=/opt/otter/bin:/opt/conda/envs/otter-core/bin:\$HOME/go/bin:\$HOME/.cargo/bin:\$HOME/.local/bin:\$PATH" >> /root/.bashrc && \
+RUN echo "export RUSTUP_HOME=/opt/rustup" >> /root/.bashrc && \
+    echo "export CARGO_HOME=/opt/cargo" >> /root/.bashrc && \
+    echo "export PATH=/opt/otter/bin:/opt/conda/envs/otter-core/bin:\$HOME/go/bin:\$HOME/.cargo/bin:\$HOME/.local/bin:/opt/cargo/bin:\$PATH" >> /root/.bashrc && \
     echo "export GOPATH=\$HOME/go" >> /root/.bashrc
 
 # 为 otter-pup 用户配置 .bashrc
-RUN echo "export PATH=/opt/otter/bin:/opt/conda/envs/otter-core/bin:\$HOME/go/bin:\$HOME/.cargo/bin:\$HOME/.local/bin:\$PATH" >> /home/otter-pup/.bashrc && \
+RUN echo "export RUSTUP_HOME=/opt/rustup" >> /home/otter-pup/.bashrc && \
+    echo "export CARGO_HOME=/opt/cargo" >> /home/otter-pup/.bashrc && \
+    echo "export PATH=/opt/otter/bin:/opt/conda/envs/otter-core/bin:\$HOME/go/bin:\$HOME/.cargo/bin:\$HOME/.local/bin:/opt/cargo/bin:\$PATH" >> /home/otter-pup/.bashrc && \
     echo "export GOPATH=\$HOME/go" >> /home/otter-pup/.bashrc && \
     chown otter-pup:otter-pup /home/otter-pup/.bashrc
 
