@@ -1,75 +1,94 @@
-# 🦦 Holt
+<p align="right">
+  <strong>English</strong> · <a href="./README_zh.md">简体中文</a>
+</p>
 
-> **Next-Generation Containerized Workbench for Otter Bioinformatics & Multi-Language Computing**
+<h1 align="center">🦦 HOLT</h1>
 
-[![holt-build](https://github.com/otterlab-bio/holt/actions/workflows/holt-build.yml/badge.svg)](https://github.com/otterlab-bio/holt/actions/workflows/holt-build.yml)
-[![holt-run](https://github.com/otterlab-bio/holt/actions/workflows/holt-run.yml/badge.svg)](https://github.com/otterlab-bio/holt/actions/workflows/holt-run.yml)
-[![GitHub Container Registry](https://img.shields.io/badge/GHCR-ghcr.io%2Fotterlab--bio-blue?logo=github)](https://github.com/orgs/otterlab-bio/packages)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+<p align="center">
+  <strong>Containerized Workbench for Otter Bioinformatics & Multi-Language Computing</strong><br>
+  High-performance layered Docker suite featuring native Otter toolchains, enva-managed conda runtime, and modern developer tooling.
+</p>
+
+<p align="center">
+  <a href="#overview">Overview</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#otter-toolchain">Otter Toolchain</a> ·
+  <a href="#multi-language-stack">Languages</a> ·
+  <a href="#cicd--publishing">CI/CD</a> ·
+  <a href="#repository-layout">Repository</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/otterlab-bio/holt/actions/workflows/holt-build.yml"><img src="https://github.com/otterlab-bio/holt/actions/workflows/holt-build.yml/badge.svg" alt="holt-build"></a>
+  <a href="https://github.com/otterlab-bio/holt/actions/workflows/holt-run.yml"><img src="https://github.com/otterlab-bio/holt/actions/workflows/holt-run.yml/badge.svg" alt="holt-run"></a>
+  <a href="https://github.com/orgs/otterlab-bio/packages"><img src="https://img.shields.io/badge/GHCR-ghcr.io%2Fotterlab--bio-blue?logo=github" alt="GitHub Packages"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT"></a>
+</p>
 
 ---
 
-## 🌟 概览
+## 🌟 Overview
 
-**Holt** 是面向 [Otter](https://github.com/otterlab-bio/otter) 生物信息学生态及现代化多语言开发的高性能 Docker 容器套件。项目采用层次化解耦设计，将基础构建依赖与完整运行时工作台分别打包为两个镜像，全面托管于 **GitHub Container Registry (GHCR)**：
+**Holt** is an enterprise-grade containerized environment engineered for the [Otter](https://github.com/otterlab-bio/otter) bioinformatics ecosystem and multi-language scientific computing. By separating compilation dependencies from runtime orchestration, Holt provides two cleanly layered container images hosted on **GitHub Container Registry (GHCR)**:
 
-- 🛠️ **`ghcr.io/otterlab-bio/holt-build`**: 轻量级多语言基础构建层，内置 Go、Node.js / npm、Python 3、R 与 Rust，配置 yay AUR 助手与并行编译，默认非特权用户 `otter-pup`。
-- 🧬 **`ghcr.io/otterlab-bio/holt-run`**: 统一生物信息学工作台与运行环境，继承自 `holt-build`，完整内置 Otter 核心工具套件，并通过 `enva` 预初始化 `otter-core` 环境，集成 JupyterLab (Ark)、SSH 服务与 AI 编程工具链。
+- 🛠️ **`ghcr.io/otterlab-bio/holt-build`**: Lightweight multi-language base layer built on Arch Linux. Out-of-the-box support for Go, Node.js / npm, Python 3, R, Rust (`cargo`), and the `yay` AUR helper. Runs under non-root user `otter-pup`.
+- 🧬 **`ghcr.io/otterlab-bio/holt-run`**: Unified bioinformatics workbench inheriting from `holt-build`. Pre-packaged with the entire Otter tool suite, an `otter-core` conda environment pre-initialized via `enva`, JupyterLab with Posit Ark kernel, an auto-starting SSH daemon, and AI coding assistants (`claude-code`, `uv`, `codex`).
 
 ---
 
-## 🏗️ 架构设计
+## 🏗️ Architecture
 
 ```mermaid
 graph TD
     A[archlinux:latest] --> B[holt-build]
     B --> C[holt-run]
 
-    subgraph "holt-build (基础构建镜像)"
-        B --> B1[Go + Node.js / npm]
-        B --> B2[Python 3 + R + pak]
-        B --> B3[Rustup / Cargo + yay AUR]
-        B --> B4[默认用户: otter-pup]
+    subgraph "holt-build (Base Layer)"
+        B --> B1[Go 1.23+ & Node.js / npm]
+        B --> B2[Python 3 & R with pak]
+        B --> B3[Rustup / Cargo & yay AUR helper]
+        B --> B4[Default non-root user: otter-pup]
     end
 
-    subgraph "holt-run (统一运行工作台)"
-        C --> C1["Otter 全套工具 (otter, enva, craftmake, xenofilx...)"]
-        C --> C2["enva 初始化 otter-core 环境 (/opt/conda/envs/otter-core)"]
-        C --> C3[JupyterLab + Posit Ark 内核]
-        C --> C4[SSH 自动守护服务 + Claude Code CLI + uv]
-        C --> C5[默认用户: otter-pup]
+    subgraph "holt-run (Runtime & Workbench)"
+        C --> C1["Full Otter Suite (otter, enva, craftmake, xenofilx...)"]
+        C --> C2["Pre-initialized otter-core env (/opt/conda/envs/otter-core)"]
+        C --> C3[JupyterLab + Posit Ark kernel]
+        C --> C4[SSH daemon + Claude Code CLI + uv]
+        C --> C5[Default non-root user: otter-pup]
     end
 ```
 
 ---
 
-## 📦 镜像特性对比
+## 📦 Container Comparison
 
-| 特性 | `holt-build` (基础构建镜像) | `holt-run` (统一运行镜像) |
+| Specification | `holt-build` (Base Image) | `holt-run` (Runtime Workbench) |
 | :--- | :--- | :--- |
-| **基础底座** | `archlinux:latest` | `ghcr.io/otterlab-bio/holt-build:latest` |
-| **默认用户** | `otter-pup` (具备 sudo 权限) | `otter-pup` (具备 sudo 权限) |
-| **语言与包管理器** | Go, Node.js, npm, Python 3, pip, R, pak, Rust (cargo) | 继承全部语言环境 + `uv` |
-| **Otter 工具链** | — | 全套预装 (`otter`, `enva`, `craftmake`, `xenofilx`, `pairbam`, `seq2mat`, `methx`, `qctb`, `fastqcx`, `matsrun`) |
-| **生信分析环境** | — | `otter-core` 预初始化 (bismark, bowtie2, samtools, star, htseq, rmats, picard, fastqc, macs2, bwa...) |
-| **开发服务** | 基础终端 Shell | SSH 守护服务 (2222)、JupyterLab (8889)、Ark 内核 |
-| **AI 辅助工具** | — | Claude Code CLI (`claude-code`)、Codex、droid |
-| **预留服务端口** | — | `2222` (SSH), `8889` (JupyterLab), `8080`, `8787` (Web应用) |
+| **Base Image** | `archlinux:latest` | `ghcr.io/otterlab-bio/holt-build:latest` |
+| **Default User** | `otter-pup` (sudo NOPASSWD enabled) | `otter-pup` (sudo NOPASSWD enabled) |
+| **Languages & Package Managers** | Go, Node.js, npm, Python 3, pip, R, pak, Rust (cargo) | All base languages + Python `uv` |
+| **Otter Tool Suite** | — | Fully pre-installed (`otter`, `enva`, `craftmake`, `xenofilx`, `pairbam`, `seq2mat`, `methx`, `qctb`, `fastqcx`, `matsrun`) |
+| **Bioinformatics Runtime** | — | `otter-core` pre-initialized (bismark, bowtie2, samtools, star, htseq, rmats, picard, fastqc, macs2, bwa...) |
+| **Interactive Services** | Interactive Bash | SSH daemon (port 2222), JupyterLab (port 8889) with Ark kernel |
+| **AI Developer Tools** | — | Claude Code CLI (`claude-code`), OpenAI Codex, droid |
+| **Exposed Ports** | — | `2222` (SSH), `8889` (JupyterLab), `8080`, `8787` (Web services) |
 
 ---
 
-## 🚀 快速上手
+## 🚀 Quick Start
 
-### 1. 拉取预构建镜像 (GHCR)
+### 1. Pull Pre-built Images from GHCR
 
 ```bash
 docker pull ghcr.io/otterlab-bio/holt-build:latest
 docker pull ghcr.io/otterlab-bio/holt-run:latest
 ```
 
-### 2. 运行容器
+### 2. Launching Containers
 
-#### 启动 `holt-run` 工作台（推荐）
+#### Start `holt-run` Workbench (Recommended)
 
 ```bash
 docker run -d \
@@ -81,149 +100,143 @@ docker run -d \
   ghcr.io/otterlab-bio/holt-run:latest
 ```
 
-或使用项目内置的 `docker-compose.yml` 一键编排：
+Or start instantly with **Docker Compose**:
 
 ```bash
 docker compose up -d holt-run
 ```
 
-#### 启动 `holt-build` 基础镜像
+#### Launch `holt-build` Interactive Shell
 
 ```bash
 docker run -it --name holt-build ghcr.io/otterlab-bio/holt-build:latest
 ```
 
-### 3. 连接与使用
+### 3. Accessing Services
 
-- **SSH 终端连接**（服务已自动随容器就绪）：
+- **SSH Access** (auto-started with container):
   ```bash
   ssh otter-pup@localhost -p 2222
-  # 默认密码: otter-pup
+  # Default password: otter-pup
   ```
 
-- **启动 JupyterLab**（按需手动启动，降低闲置资源损耗）：
+- **Launch JupyterLab** (started on demand to save idle resources):
   ```bash
-  # 直接从宿主机执行
   docker exec holt-run su - otter-pup -c "jupyter-lab --no-browser --allow-root --ip=* --port=8889" &
   ```
-  浏览器打开：[http://localhost:8889](http://localhost:8889)
+  Then open in your browser: [http://localhost:8889](http://localhost:8889)
 
-- **交互式创建新用户**：
+- **Interactive User Management Wizard**:
   ```bash
   docker exec -it holt-run sudo add-user
   ```
+  The interactive wizard automatically creates users, sets up SSH directories, configures sudo permissions, and writes multi-language PATHs into `.bashrc`.
 
 ---
 
-## 🧰 Otter 生物信息学工具集成
+## 🧰 Otter Toolchain
 
-`holt-run` 完整内置了 [otterlab-bio/otter](https://github.com/otterlab-bio/otter) 发布的独立二进制工具套件，并已全局加入 PATH：
+`holt-run` includes all standalone static binary tools released by [otterlab-bio/otter](https://github.com/otterlab-bio/otter), globally available on `PATH`:
 
-| 工具命令 | 功能描述 |
+| Tool | Description |
 | :--- | :--- |
-| **`otter`** | 核心生信工作流编排与执行引擎 |
-| **`enva`** | 基于 Rattler 的现代化高性能 Conda/Mamba 环境管理器 |
-| **`craftmake`** | 统一工作流定义与依赖执行客户端 |
-| **`xenofilx`** | PDX/CDX 肿瘤异种移植人鼠混合测序数据快速过滤工具 |
-| **`pairbam`** | 高性能双端 BAM 匹配与比对校准工具 |
-| **`seq2mat`** | 测序数据与表达/甲基化矩阵极速转换工具 |
-| **`methx`** | 高通量甲基化特征提取与分析套件 |
-| **`qctb`** | 质量控制与测序指标综合评估工具 |
-| **`fastqcx`** | 超快 FASTQ 质控与过滤工具 |
-| **`matsrun`** | rMATS 可变剪接分析执行与结果提取封装工具 |
+| **`otter`** | Core workflow orchestrator and project execution engine |
+| **`enva`** | Rattler-first conda environment manager for fast, deterministic environments |
+| **`craftmake`** | Unified workflow graph and execution client |
+| **`xenofilx`** | High-throughput human-mouse read filtration for PDX/CDX models |
+| **`pairbam`** | Paired-end BAM alignment reconciliation and mismatch resolution |
+| **`seq2mat`** | Rapid sequencing-to-count/methylation matrix transformer |
+| **`methx`** | Comprehensive DNA methylation extraction and feature toolkit |
+| **`qctb`** | Multi-metric quality control assessment tool |
+| **`fastqcx`** | Ultra-fast FASTQ quality control and trimming utility |
+| **`matsrun`** | Alternative splicing execution and reporting wrapper for rMATS |
 
-### 运行时环境 `otter-core`
+### Pre-initialized `otter-core` Runtime
 
-容器在构建时已通过 `enva` 将 `otter-core` 环境完整下载安装至 `/opt/conda/envs/otter-core`，并把其二进制路径添加至全局 PATH：
+During container build, `enva` initializes the `otter-core` environment directly into `/opt/conda/envs/otter-core`, placing all industry-standard bioinformatics binaries on system `PATH`:
 
 ```bash
-# 进入容器查看 otter 与生信工具
+# Verify tools inside the container
 docker exec -it holt-run bash
 
-# 运行工具
 otter --version
 enva list
 samtools --version
 bismark --version
 bowtie2 --version
+star --version
 ```
 
 ---
 
-## 💻 多语言开发环境
+## 💻 Multi-Language Stack
 
-### Go 开发
+`holt` provides a first-class developer environment for all major systems and bioinformatics programming languages:
+
 ```bash
+# Go
 go version
-go mod init my_app
-```
+go mod init my_project
 
-### Node.js / npm 开发
-```bash
+# Node.js & npm
 node -v
 npm -v
-```
 
-### Python & uv
-```bash
+# Python & uv
 python --version
-uv pip list
-```
+uv pip install numpy pandas
 
-### Rust 开发
-```bash
+# Rust
 rustc --version
 cargo --version
-```
 
-### AI 辅助编程
-```bash
+# AI Assistant
 claude-code
 ```
 
 ---
 
-## 🔨 本地构建与 CI/CD
+## 🔨 CI/CD & Publishing
 
-### 本地构建
+Holt uses GitHub Actions with zero external dependencies to build and publish multi-platform images to GHCR:
+
+- **`.github/workflows/holt-build.yml`**: Triggered on `push` to `main` (and scheduled weekly). Builds and pushes `ghcr.io/otterlab-bio/holt-build:latest`.
+- **`.github/workflows/holt-run.yml`**: Cascaded automatically via `workflow_run` immediately upon `holt-build` completion. Pulls the fresh base image, builds the workbench, and pushes `ghcr.io/otterlab-bio/holt-run:latest`.
+
+### Local Build Commands
 
 ```bash
-# 构建基础镜像
+# Build base image
 docker build -t ghcr.io/otterlab-bio/holt-build:latest ./holt-build
 
-# 构建运行镜像
+# Build runtime image
 docker build -t ghcr.io/otterlab-bio/holt-run:latest ./holt-run
 
-# 或统一构建
+# Or build both via docker compose
 docker compose build
 ```
 
-### 持续集成 (GitHub Actions)
-
-项目配置了自动构建与发布流水线（推送至 `ghcr.io/otterlab-bio`）：
-- `.github/workflows/holt-build.yml`: 定时或变更时自动构建并推送 `holt-build`
-- `.github/workflows/holt-run.yml`: 定时或变更时自动构建并推送 `holt-run`
-
 ---
 
-## 📁 仓库结构
+## 📁 Repository Layout
 
 ```
 holt/
 ├── holt-build/
-│   ├── Dockerfile             # 基础构建镜像 (Go, npm, Python, R, Rust, otter-pup)
-│   └── makepkg.conf           # 并行编译配置
+│   ├── Dockerfile             # Base build container (Go, npm, Python, R, Rust, otter-pup)
+│   └── makepkg.conf           # Arch Linux parallel compilation configuration
 ├── holt-run/
-│   ├── Dockerfile             # 运行环境镜像 (Otter 全套工具, otter-core, JupyterLab, SSH)
-│   ├── add_user_interactive.sh# 交互式用户配置脚本
-│   └── envs/                  # otter 环境配置定义 (otter-core.yaml 等)
+│   ├── Dockerfile             # Runtime workbench (Otter tools, otter-core, JupyterLab, SSH)
+│   ├── add_user_interactive.sh# Container user management script
+│   └── envs/                  # Otter environment specifications (otter-core.yaml, etc.)
 ├── .github/workflows/
-│   ├── holt-build.yml         # GHCR 构建发布工作流 (holt-build)
-│   └── holt-run.yml           # GHCR 构建发布工作流 (holt-run)
-├── docker-compose.yml         # 本地容器编排定义
-├── README.md                  # 项目说明文档
-├── CLAUDE.md                  # Claude Code 开发指南
-├── LICENSE                    # MIT 开源许可证
+│   ├── holt-build.yml         # GHCR automated build & publish (holt-build)
+│   └── holt-run.yml           # Cascaded GHCR automated build & publish (holt-run)
+├── docker-compose.yml         # Container orchestration manifest
+├── README.md                  # Documentation (English)
+├── README_zh.md               # Documentation (简体中文)
+├── CLAUDE.md                  # Agent developer guidelines
+├── LICENSE                    # MIT License
 ├── .gitignore
 ├── .dockerignore
 └── .gitattributes
@@ -231,6 +244,6 @@ holt/
 
 ---
 
-## 📄 许可证
+## 📄 License
 
-本项目基于 [MIT 许可证](LICENSE) 开源发布。
+Distributed under the [MIT License](LICENSE).
