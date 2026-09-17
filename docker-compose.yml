@@ -2,7 +2,7 @@ services:
   holt-build:
     build:
       context: ./holt-build
-    image: fallingstar10/holt-build:latest
+    image: ghcr.io/otterlab-bio/holt-build:latest
     container_name: holt-build
     stdin_open: true
     tty: true
@@ -10,7 +10,7 @@ services:
   holt-run:
     build:
       context: ./holt-run
-    image: fallingstar10/holt-run:latest
+    image: ghcr.io/otterlab-bio/holt-run:latest
     container_name: holt-run
     ports:
       - "2222:2222"

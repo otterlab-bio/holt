@@ -1,342 +1,233 @@
-# 🌲 Holt - 生物信息学与多语言开发容器套件
+# 🦦 Holt
 
-[![](https://github.com/rainoffallingstar/holt/actions/workflows/holt-build.yml/badge.svg)](https://github.com/rainoffallingstar/holt/actions/workflows/holt-build.yml) [![](https://github.com/rainoffallingstar/holt/actions/workflows/holt-run.yml/badge.svg)](https://github.com/rainoffallingstar/holt/actions/workflows/holt-run.yml)
+> **Next-Generation Containerized Workbench for Otter Bioinformatics & Multi-Language Computing**
 
----
-
-## 📦 项目概述
-
-**Holt** 是一套面向生物信息学工作流与多语言开发的高效 Docker 容器套件 `<small>`(Efficient Docker container suite for bioinformatics workflows and multi-language development)`</small>`。容器专为高性能与极简易用设计，将复杂的跨语言环境封装为两个层次分明、相互继承的镜像：**`holt-build`** 与 **`holt-run`**。
-
-✨ **核心特色**:
-
-- 🐧 **基于 Arch Linux** - 轻量、前沿、高度定制的 Linux 发行版
-- 🧰 **yay AUR 助手** - 强大的 Arch 用户仓库包管理
-- 🐍 **Python 3** - 包含 pip、uv 与 micromamba 跨语言环境管理
-- 📊 **R 语言环境** - 完整的统计分析生态（Shiny、tidyverse、mlr3verse 等）
-- 📓 **JupyterLab** - 交互式计算环境（集成 Ark 增强）
-- 🔧 **Ark + Air** - Posit Dev 开发工具链
-- 💡 **R LSP 支持** - languageserver + lintr 代码质量工具
-- 🦀 **Rust** - 高性能系统编程语言（rustup / cargo）
-- 🟢 **Node.js** - JavaScript 运行时与 npm 包管理
-- 🔵 **Go** - 现代化并发系统编程语言
-- 🤖 **Claude Code CLI** - 全局内置 AI 辅助编程工具
-
-容器采用精简的两层继承设计，从基础构建层逐步派生，确保每一层都有清晰的功能分工与依赖边界。
+[![holt-build](https://github.com/otterlab-bio/holt/actions/workflows/holt-build.yml/badge.svg)](https://github.com/otterlab-bio/holt/actions/workflows/holt-build.yml)
+[![holt-run](https://github.com/otterlab-bio/holt/actions/workflows/holt-run.yml/badge.svg)](https://github.com/otterlab-bio/holt/actions/workflows/holt-run.yml)
+[![GitHub Container Registry](https://img.shields.io/badge/GHCR-ghcr.io%2Fotterlab--bio-blue?logo=github)](https://github.com/orgs/otterlab-bio/packages)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
 
-## 🏗️ 容器架构
+## 🌟 概览
 
-### 📊 架构图
+**Holt** 是面向 [Otter](https://github.com/otterlab-bio/otter) 生物信息学生态及现代化多语言开发的高性能 Docker 容器套件。项目采用层次化解耦设计，将基础构建依赖与完整运行时工作台分别打包为两个镜像，全面托管于 **GitHub Container Registry (GHCR)**：
+
+- 🛠️ **`ghcr.io/otterlab-bio/holt-build`**: 轻量级多语言基础构建层，内置 Go、Node.js / npm、Python 3、R 与 Rust，配置 yay AUR 助手与并行编译，默认非特权用户 `otter-pup`。
+- 🧬 **`ghcr.io/otterlab-bio/holt-run`**: 统一生物信息学工作台与运行环境，继承自 `holt-build`，完整内置 Otter 核心工具套件，并通过 `enva` 预初始化 `otter-core` 环境，集成 JupyterLab (Ark)、SSH 服务与 AI 编程工具链。
+
+---
+
+## 🏗️ 架构设计
 
 ```mermaid
 graph TD
     A[archlinux:latest] --> B[holt-build]
     B --> C[holt-run]
 
-    B --> D[Python + R + pak + micromamba + yay + rustup + Node.js + npm + Go]
-    C --> E[R 扩展包 + JupyterLab + SSH + fallingstar10 + Claude Code + uv]
+    subgraph "holt-build (基础构建镜像)"
+        B --> B1[Go + Node.js / npm]
+        B --> B2[Python 3 + R + pak]
+        B --> B3[Rustup / Cargo + yay AUR]
+        B --> B4[默认用户: otter-pup]
+    end
+
+    subgraph "holt-run (统一运行工作台)"
+        C --> C1["Otter 全套工具 (otter, enva, craftmake, xenofilx...)"]
+        C --> C2["enva 初始化 otter-core 环境 (/opt/conda/envs/otter-core)"]
+        C --> C3[JupyterLab + Posit Ark 内核]
+        C --> C4[SSH 自动守护服务 + Claude Code CLI + uv]
+        C --> C5[默认用户: otter-pup]
+    end
 ```
-
-### 🎯 层次化容器结构
-
-#### 1. **🛠️ holt-build** - 基础构建容器层
-
-- **基础镜像**: `archlinux:latest`
-- **编程语言**: Python 3, R, Rust, Node.js, Go
-- **包管理器**:
-  - **pip** (Python)
-  - **pak** (R)
-  - **micromamba** (轻量级 Conda 替代品)
-  - **yay** (Arch AUR 助手)
-  - **cargo** (Rust)
-  - **npm** (Node.js)
-  - **go mod** (Go)
-- **特点**: 并行编译优化（`makepkg.conf`），非特权 AUR 构建用户 `builduser`
-
-#### 2. **🧬 holt-run** - 统一工作与运行环境
-
-- **继承自**: `fallingstar10/holt-build:latest`
-- **R 语言生态**:
-  - Shiny 生态（DT, shinyWidgets, shiny, bslib 等）
-  - 统计与可视化（plotly, pROC, sva, tidyverse 等）
-  - 机器学习（mlr3verse）
-  - 开发工具（languageserver, lintr）
-- **集成功能与服务**:
-  - 📓 **JupyterLab** - 已安装，按需手动启动（默认端口 8889）
-    - 集成 **Ark** (Posit Dev) - 增强 JupyterLab 的 R 开发体验
-  - 🔧 **Air** (Posit Dev) - R 包管理与发布工具
-  - 💡 **R 语言服务器** - languageserver + lintr 代码诊断与自动补全
-  - 🔐 **SSH 访问** - 容器启动后自动就绪（端口 2222）
-  - 👤 **fallingstar10 用户** - 默认工作账户（密码：fallingstar10，具备 sudo 权限）
-  - 🤖 **Claude Code CLI** - 全局预装，开箱即用
-  - 👥 **交互式用户管理** - 提供 `add-user` 工具一键配置新用户环境
-- **预留端口**: 8080, 8787（可供 Shiny、Web 应用或自定义服务使用）
 
 ---
 
-## 🚀 快速开始
+## 📦 镜像特性对比
 
-### 使用 Docker CLI
+| 特性 | `holt-build` (基础构建镜像) | `holt-run` (统一运行镜像) |
+| :--- | :--- | :--- |
+| **基础底座** | `archlinux:latest` | `ghcr.io/otterlab-bio/holt-build:latest` |
+| **默认用户** | `otter-pup` (具备 sudo 权限) | `otter-pup` (具备 sudo 权限) |
+| **语言与包管理器** | Go, Node.js, npm, Python 3, pip, R, pak, Rust (cargo) | 继承全部语言环境 + `uv` |
+| **Otter 工具链** | — | 全套预装 (`otter`, `enva`, `craftmake`, `xenofilx`, `pairbam`, `seq2mat`, `methx`, `qctb`, `fastqcx`, `matsrun`) |
+| **生信分析环境** | — | `otter-core` 预初始化 (bismark, bowtie2, samtools, star, htseq, rmats, picard, fastqc, macs2, bwa...) |
+| **开发服务** | 基础终端 Shell | SSH 守护服务 (2222)、JupyterLab (8889)、Ark 内核 |
+| **AI 辅助工具** | — | Claude Code CLI (`claude-code`)、Codex、droid |
+| **预留服务端口** | — | `2222` (SSH), `8889` (JupyterLab), `8080`, `8787` (Web应用) |
 
-#### 1️⃣ 拉取预构建镜像
+---
+
+## 🚀 快速上手
+
+### 1. 拉取预构建镜像 (GHCR)
 
 ```bash
-docker pull fallingstar10/holt-build:latest
-docker pull fallingstar10/holt-run:latest
+docker pull ghcr.io/otterlab-bio/holt-build:latest
+docker pull ghcr.io/otterlab-bio/holt-run:latest
 ```
 
-#### 2️⃣ 运行容器
+### 2. 运行容器
+
+#### 启动 `holt-run` 工作台（推荐）
 
 ```bash
-# 🛠️ holt-build - 交互式基础开发环境
-docker run -it --name holt-build fallingstar10/holt-build:latest
-
-# 🧬 holt-run - 完整工作环境（推荐）
 docker run -d \
   -p 2222:2222 \
   -p 8889:8889 \
   -p 8080:8080 \
   -p 8787:8787 \
   --name holt-run \
-  fallingstar10/holt-run:latest
+  ghcr.io/otterlab-bio/holt-run:latest
 ```
 
-#### 3️⃣ 访问服务
-
-**SSH 访问**（服务自动启动）:
-```bash
-ssh fallingstar10@localhost -p 2222
-# 默认密码: fallingstar10
-```
-
-**启动 JupyterLab**（按需手动启动，降低闲置资源开销）:
-```bash
-# 方法 1: 在容器内部启动
-docker exec -it holt-run /bin/bash
-su - fallingstar10 -c 'jupyter-lab --no-browser --allow-root --ip=* --port=8889 &'
-
-# 方法 2: 从主机直接启动
-docker exec holt-run su - fallingstar10 -c "jupyter-lab --no-browser --allow-root --ip=* --port=8889" &
-```
-
-浏览器访问: **http://localhost:8889**
-
-**创建新用户**:
-```bash
-# 进入容器
-docker exec -it holt-run /bin/bash
-
-# 运行交互式用户管理向导
-sudo add-user
-```
-
-向导将自动配置用户主目录、sudo 权限、SSH 密钥与多语言环境变量。
-
----
-
-### 使用 Docker Compose
-
-仓库内置了 `docker-compose.yml`，可快捷启动与编排容器：
+或使用项目内置的 `docker-compose.yml` 一键编排：
 
 ```bash
-# 启动 holt-run 服务
 docker compose up -d holt-run
+```
 
-# 查看服务状态
-docker compose ps
+#### 启动 `holt-build` 基础镜像
 
-# 停止并清理
-docker compose down
+```bash
+docker run -it --name holt-build ghcr.io/otterlab-bio/holt-build:latest
+```
+
+### 3. 连接与使用
+
+- **SSH 终端连接**（服务已自动随容器就绪）：
+  ```bash
+  ssh otter-pup@localhost -p 2222
+  # 默认密码: otter-pup
+  ```
+
+- **启动 JupyterLab**（按需手动启动，降低闲置资源损耗）：
+  ```bash
+  # 直接从宿主机执行
+  docker exec holt-run su - otter-pup -c "jupyter-lab --no-browser --allow-root --ip=* --port=8889" &
+  ```
+  浏览器打开：[http://localhost:8889](http://localhost:8889)
+
+- **交互式创建新用户**：
+  ```bash
+  docker exec -it holt-run sudo add-user
+  ```
+
+---
+
+## 🧰 Otter 生物信息学工具集成
+
+`holt-run` 完整内置了 [otterlab-bio/otter](https://github.com/otterlab-bio/otter) 发布的独立二进制工具套件，并已全局加入 PATH：
+
+| 工具命令 | 功能描述 |
+| :--- | :--- |
+| **`otter`** | 核心生信工作流编排与执行引擎 |
+| **`enva`** | 基于 Rattler 的现代化高性能 Conda/Mamba 环境管理器 |
+| **`craftmake`** | 统一工作流定义与依赖执行客户端 |
+| **`xenofilx`** | PDX/CDX 肿瘤异种移植人鼠混合测序数据快速过滤工具 |
+| **`pairbam`** | 高性能双端 BAM 匹配与比对校准工具 |
+| **`seq2mat`** | 测序数据与表达/甲基化矩阵极速转换工具 |
+| **`methx`** | 高通量甲基化特征提取与分析套件 |
+| **`qctb`** | 质量控制与测序指标综合评估工具 |
+| **`fastqcx`** | 超快 FASTQ 质控与过滤工具 |
+| **`matsrun`** | rMATS 可变剪接分析执行与结果提取封装工具 |
+
+### 运行时环境 `otter-core`
+
+容器在构建时已通过 `enva` 将 `otter-core` 环境完整下载安装至 `/opt/conda/envs/otter-core`，并把其二进制路径添加至全局 PATH：
+
+```bash
+# 进入容器查看 otter 与生信工具
+docker exec -it holt-run bash
+
+# 运行工具
+otter --version
+enva list
+samtools --version
+bismark --version
+bowtie2 --version
 ```
 
 ---
 
-## 🔧 构建指南
+## 💻 多语言开发环境
 
-### 🖥️ 本地构建
-
+### Go 开发
 ```bash
-# 1. 构建基础镜像 holt-build
-docker build -t fallingstar10/holt-build:latest ./holt-build
-
-# 2. 构建运行镜像 holt-run
-docker build -t fallingstar10/holt-run:latest ./holt-run
+go version
+go mod init my_app
 ```
 
-或使用 Docker Compose 统一构建：
-
+### Node.js / npm 开发
 ```bash
-docker compose build
+node -v
+npm -v
 ```
 
-### ⚡ CI/CD 自动构建
-
-项目使用 **GitHub Actions** 进行自动化持续构建与镜像发布：
-
-- **🕐 定时构建**: 每周五自动构建
-  - `holt-build`: 06:00 UTC
-  - `holt-run`: 08:00 UTC
-- **🔔 触发条件**:
-  - 📅 周期定时触发
-  - 👆 GitHub 网页手动触发 (`workflow_dispatch`)
-  - 📝 对应子目录（`holt-build/**` 或 `holt-run/**`）的代码 `push`
-- **🚀 镜像仓库**: 自动构建并推送到 Docker Hub (`fallingstar10/holt-build` 和 `fallingstar10/holt-run`)
-
----
-
-## 📋 容器详细说明
-
-### 🛠️ holt-build 容器
-
-**基础镜像**: `archlinux:latest`
-
-**🧰 核心工具与版本**:
-
-- **Python 3**: `python`, `pip`
-- **R**: `r`, `pak` 包管理器
-- **micromamba**: 极速轻量级 Conda 替代方案
-- **yay**: AUR 包管理工具
-- **Rust**: `rustup`, `rustc`, `cargo`
-- **Node.js**: `node`, `npm`
-- **Go**: `go`
-
-**⚙️ 特性与优化**:
-
-- 并行编译优化配置（`makepkg.conf`）
-- 专用低权限构建账户 `builduser`
-- 构建中间缓存与临时文件清理
-
-### 🧬 holt-run 容器
-
-**继承自**: `fallingstar10/holt-build:latest`
-
-**🎯 主要功能**:
-
-#### 1. 📊 R 语言环境
-
-- **包管理器**: 使用 `pak` 进行高速并行安装与依赖解析
-- **预装 R 包组**:
-  - **组1 (Shiny 与数据处理)**: DT, shinyWidgets, shiny, bslib, optparse, openxlsx, XML, R6, yaml, glue, fs, png, reshape2, readxl, RColorBrewer, rjson, data.table, dbplyr
-  - **组2 (统计与可视化)**: plotly, pROC, sva, sampling, pdftools, umap, gridExtra, ggpubr, tidyverse
-  - **组6 (机器学习)**: mlr3verse
-  - **组7 (开发者工具)**: languageserver, lintr
-
-#### 2. 📓 JupyterLab + Posit Dev 工具
-
-- **JupyterLab**:
-  - **状态**: 预安装，按需手动启动以节省资源
-  - **命令**: `su - fallingstar10 -c 'jupyter-lab --no-browser --allow-root --ip=* --port=8889 &'`
-  - **端口**: 8889
-  - **内核支持**: Python 3, R, Bash
-- **Ark (Posit Dev)**:
-  - 功能: 现代化 R 语言内核，显著增强 JupyterLab 下的 R 交互体验
-- **Air (Posit Dev)**:
-  - 功能: 现代化 R 语言开发与格式化工具链
-
-#### 3. 🔐 SSH 访问
-
-- **状态**: 容器启动自动运行
-- **端口**: 2222
-- **默认用户**: `fallingstar10`（默认密码：`fallingstar10`）
-- **认证**: 支持密码登录与 SSH 公钥认证
-
-#### 4. 👥 用户管理 (`add-user`)
-
-- **位置**: `/usr/local/bin/add-user`
-- **功能**: 交互式添加新用户，自动配置 sudo 权限、SSH 目录与多语言环境变量
-- **执行**: `sudo add-user`
-
-#### 5. 🤖 AI 开发工具
-
-- **Claude Code CLI**: 全局预装，终端直接运行 `claude-code`
-- **Codex / opencode-ai / droid**: 全局预装
-- **uv**: 高性能 Python 包管理工具
-
----
-
-## 🧪 使用示例
-
-### Python 开发
-
+### Python & uv
 ```bash
-docker exec -it holt-run /bin/bash
-
-# 使用 micromamba 安装生物信息学工具与科学计算库
-micromamba install pandas numpy scipy -y
-micromamba install -c bioconda samtools -y
-
-# 或使用 uv 进行极速包管理
-uv pip install scipy
-```
-
-### R 开发
-
-```bash
-# 使用 pak 安装 R 包
-R -e "pak::pkg_install(c('DESeq2', 'ComplexHeatmap'))"
-
-# 代码静态检查
-R -e "lintr::lint_dir('.')"
+python --version
+uv pip list
 ```
 
 ### Rust 开发
-
 ```bash
-# 激活 Rust 环境（fallingstar10 用户首次使用）
-source ~/.cargo/env
-
-# 新建项目
-cargo new my_tool
-cd my_tool
-cargo run
+rustc --version
+cargo --version
 ```
 
-### Node.js 开发
-
+### AI 辅助编程
 ```bash
-npm init -y
-npm install -g typescript
-```
-
-### Go 开发
-
-```bash
-go version
-mkdir my_project && cd my_project
-go mod init my_project
+claude-code
 ```
 
 ---
 
-## ⚙️ 系统要求
+## 🔨 本地构建与 CI/CD
 
-- **内存**: 至少 4GB RAM（推荐 8GB 以上）
-- **磁盘**: 至少 10GB 可用存储空间
-- **Docker**: 20.10 或更高版本
-- **平台支持**: Linux (x86_64), macOS (Intel / Apple Silicon 需配置兼容或多架构构建), Windows (WSL2)
+### 本地构建
+
+```bash
+# 构建基础镜像
+docker build -t ghcr.io/otterlab-bio/holt-build:latest ./holt-build
+
+# 构建运行镜像
+docker build -t ghcr.io/otterlab-bio/holt-run:latest ./holt-run
+
+# 或统一构建
+docker compose build
+```
+
+### 持续集成 (GitHub Actions)
+
+项目配置了自动构建与发布流水线（推送至 `ghcr.io/otterlab-bio`）：
+- `.github/workflows/holt-build.yml`: 定时或变更时自动构建并推送 `holt-build`
+- `.github/workflows/holt-run.yml`: 定时或变更时自动构建并推送 `holt-run`
 
 ---
 
-## 🔍 常见问题排查
+## 📁 仓库结构
 
-1. **查看容器运行日志**:
-   ```bash
-   docker logs holt-run
-   ```
-2. **检查 SSH 服务状态**:
-   ```bash
-   docker exec holt-run /bin/bash -c "ps aux | grep sshd"
-   ```
-3. **检查 JupyterLab 状态**:
-   ```bash
-   docker exec holt-run /bin/bash -c "ps aux | grep jupyter"
-   ```
-4. **重启运行环境**:
-   ```bash
-   docker restart holt-run
-   ```
+```
+holt/
+├── holt-build/
+│   ├── Dockerfile             # 基础构建镜像 (Go, npm, Python, R, Rust, otter-pup)
+│   └── makepkg.conf           # 并行编译配置
+├── holt-run/
+│   ├── Dockerfile             # 运行环境镜像 (Otter 全套工具, otter-core, JupyterLab, SSH)
+│   ├── add_user_interactive.sh# 交互式用户配置脚本
+│   └── envs/                  # otter 环境配置定义 (otter-core.yaml 等)
+├── .github/workflows/
+│   ├── holt-build.yml         # GHCR 构建发布工作流 (holt-build)
+│   └── holt-run.yml           # GHCR 构建发布工作流 (holt-run)
+├── docker-compose.yml         # 本地容器编排定义
+├── README.md                  # 项目说明文档
+├── CLAUDE.md                  # Claude Code 开发指南
+├── LICENSE                    # MIT 开源许可证
+├── .gitignore
+├── .dockerignore
+└── .gitattributes
+```
 
 ---
 

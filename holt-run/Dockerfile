@@ -1,10 +1,12 @@
-ARG BASE_IMAGE=fallingstar10/holt-build:latest
+ARG BASE_IMAGE=ghcr.io/otterlab-bio/holt-build:latest
 FROM ${BASE_IMAGE}
+
+USER root
 
 # 配置 pacman 并行下载
 RUN sed -i 's/^#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
 
-# ===== 阶段 1: 基础依赖安装 =====
+# ===== 阶段 1: 基础系统依赖安装 =====
 RUN pacman -Sy --noconfirm && \
     pacman -S --noconfirm --needed \
         wget \
@@ -15,16 +17,23 @@ RUN pacman -Sy --noconfirm && \
         libxtst \
         openssh \
         bubblewrap \
-        jdk-openjdk && \
+        jdk-openjdk \
+        cairo \
+        pango \
+        freetype2 \
+        libpng \
+        libjpeg-turbo \
+        libtiff \
+        noto-fonts-cjk && \
     pacman -Sc --noconfirm && \
     rm -rf /var/cache/pacman/pkg/* /tmp/*
 
-# ===== 阶段 2: JupyterLab 安装 =====
+# ===== 阶段 2: JupyterLab 与 Ark 安装 =====
 RUN pacman -S --noconfirm jupyterlab && \
     pacman -Sc --noconfirm && \
     rm -rf /var/cache/pacman/pkg/* /tmp/*
 
-# ===== 阶段 2.5: 安装 Ark (Posit Dev) =====
+# 安装 Ark (Posit Dev) - 增强 JupyterLab 的交互开发能力
 RUN cd /tmp && \
     wget -q https://github.com/posit-dev/ark/releases/download/0.1.222/ark-0.1.222-linux-x64.zip && \
     unzip -q ark-0.1.222-linux-x64.zip && \
@@ -33,79 +42,39 @@ RUN cd /tmp && \
     ark --install && \
     rm -rf /tmp/ark*
 
-# ===== 阶段 2.6: 安装 Air (Posit Dev) =====
-RUN curl -LsSf https://github.com/posit-dev/air/releases/latest/download/air-installer.sh | sh && \
-    rm -rf /tmp/*
-
-# ===== 阶段 2.7: 复制用户管理脚本 =====
+# ===== 阶段 3: 用户管理向导工具 =====
 COPY add_user_interactive.sh /usr/local/bin/add-user
-RUN chmod +x /usr/local/bin/add-user && rm -rf /tmp/*
+RUN chmod +x /usr/local/bin/add-user
 
-# ===== 阶段 3: 简化的 R 包安装 =====
-# 配置 CRAN 镜像（全局 /etc/R/Rprofile.site，对所有用户生效）
-RUN echo "options(repos = c(CRAN = 'https://mirrors.tuna.tsinghua.edu.cn/CRAN/'))" > /etc/R/Rprofile.site && \
-    echo "options(download.file.method = 'libcurl')" >> /etc/R/Rprofile.site && \
-    echo "options(timeout = 600)" >> /etc/R/Rprofile.site && \
-    rm -rf /tmp/*
+# ===== 阶段 4: 安装 otter 全套生物信息学工具集 =====
+# 包含: otter, enva, craftmake, xenofilx, pairbam, seq2mat, methx, qctb, fastqcx, matsrun
+ENV OTTER_VERSION=v1.0.0
+RUN mkdir -p /opt/otter/bin /opt/otter/envs && \
+    for tool in otter enva craftmake xenofilx pairbam seq2mat methx qctb fastqcx matsrun; do \
+      echo "Downloading $tool..."; \
+      curl -fL --retry 5 --retry-delay 2 --connect-timeout 20 \
+        "https://github.com/otterlab-bio/otter/releases/download/${OTTER_VERSION}/${tool}-linux-amd64-static" \
+        -o "/usr/local/bin/${tool}"; \
+      chmod +x "/usr/local/bin/${tool}"; \
+      ln -sf "/usr/local/bin/${tool}" "/opt/otter/bin/${tool}"; \
+    done
 
-# 安装图形库依赖
-RUN pacman -S --needed --noconfirm \
-    cairo pango freetype2 libpng libjpeg-turbo libtiff noto-fonts-cjk && \
-    pacman -Sc --noconfirm && \
-    rm -rf /var/cache/pacman/pkg/* /tmp/* && \
-    R_LIBS=/usr/lib/R/library R -e "pak::pak('r-lib/ragg', ask = FALSE)" && \
-    rm -rf /tmp/Rtmp* /tmp/* /root/.cache/pak/* && \
-    R -e "pak::cache_clean()"
+# 拷贝 otter 环境定义文件
+COPY envs/ /opt/otter/envs/
 
-# ===== 简化的 R 包：只保留组1、2、6 =====
-# 组1: Shiny 和数据处理包
-RUN R_LIBS=/usr/lib/R/library R -e "pak::pkg_install(c( \
-    'DT', 'shinyWidgets', 'shiny', 'bslib', 'optparse', 'openxlsx', \
-    'XML', 'R6', 'yaml', 'glue', 'fs', 'png', 'reshape2', 'readxl', \
-    'RColorBrewer', 'rjson', 'data.table', 'dbplyr' \
-), upgrade = TRUE, ask = FALSE, dependencies = NA)" && \
-    rm -rf /tmp/Rtmp* /tmp/* /root/.cache/pak/* && \
-    R -e "pak::cache_clean()"
+# ===== 阶段 5: 使用 enva 初始化 otter-core 环境 =====
+ENV MAMBA_ROOT_PREFIX=/opt/conda
+ENV OTTER_CORE_PREFIX=${MAMBA_ROOT_PREFIX}/envs/otter-core
+RUN mkdir -p ${MAMBA_ROOT_PREFIX} && \
+    /usr/local/bin/enva create --yaml /opt/otter/envs/otter-core.yaml --name otter-core --force --clean-cache && \
+    chown -R otter-pup:otter-pup ${MAMBA_ROOT_PREFIX} /opt/otter
 
-# 组2: 统计和可视化包
-RUN R_LIBS=/usr/lib/R/library R -e "pak::pkg_install(c( \
-    'plotly', 'pROC', 'sva', 'sampling', 'pdftools', 'umap', \
-    'gridExtra', 'ggpubr', 'tidyverse' \
-), upgrade = TRUE, ask = FALSE, dependencies = NA)" && \
-    rm -rf /tmp/Rtmp* /tmp/* /root/.cache/pak/* && \
-    R -e "pak::cache_clean()"
+# ===== 阶段 6: SSH 服务与 otter-pup 用户配置 =====
+RUN mkdir -p /var/run/sshd /home/otter-pup/.ssh && \
+    chown -R otter-pup:otter-pup /home/otter-pup/.ssh && \
+    chmod 700 /home/otter-pup/.ssh
 
-# 组6: 机器学习包
-RUN R_LIBS=/usr/lib/R/library R -e "pak::pkg_install(c( \
-    'mlr3verse' \
-), upgrade = TRUE, ask = FALSE, dependencies = NA)" && \
-    rm -rf /tmp/Rtmp* /tmp/* /root/.cache/pak/* && \
-    R -e "pak::cache_clean()"
-
-# 组7: R 语言服务器和代码质量工具
-RUN R_LIBS=/usr/lib/R/library R -e "pak::pkg_install(c( \
-    'languageserver', \
-    'lintr' \
-), upgrade = TRUE, ask = FALSE, dependencies = NA)" && \
-    rm -rf /tmp/Rtmp* /tmp/* /root/.cache/pak/* && \
-    R -e "pak::cache_clean()"
-
-# ===== 阶段 4: 创建 fallingstar10 用户 =====
-RUN useradd -m -s /bin/bash fallingstar10 && \
-    echo "fallingstar10:fallingstar10" | chpasswd && \
-    echo "fallingstar10 ALL=(ALL) ALL" >> /etc/sudoers && \
-    mkdir -p /home/fallingstar10/.local/share/R && \
-    chown -R fallingstar10:fallingstar10 /home/fallingstar10/.local && \
-    rm -rf /tmp/*
-
-# ===== 阶段 5: SSH 配置 =====
-RUN mkdir -p /var/run/sshd && \
-    mkdir -p /home/fallingstar10/.ssh && \
-    chown -R fallingstar10:fallingstar10 /home/fallingstar10/.ssh && \
-    chmod 700 /home/fallingstar10/.ssh && \
-    rm -rf /tmp/*
-
-RUN cat > /etc/ssh/sshd_config <<'EOF' && rm -rf /tmp/*
+RUN cat > /etc/ssh/sshd_config <<'EOF'
 Port 2222
 Protocol 2
 PermitRootLogin no
@@ -114,49 +83,45 @@ PubkeyAuthentication yes
 Subsystem sftp internal-sftp
 EOF
 
-RUN cat > /home/fallingstar10/.ssh/authorized_keys <<'EOF' && rm -rf /tmp/*
+RUN cat > /home/otter-pup/.ssh/authorized_keys <<'EOF'
 # Add your SSH public keys here
 # Format: ssh-rsa AAAAB3NzaC1yc2E... yourname@yourhost
 EOF
-RUN chown fallingstar10:fallingstar10 /home/fallingstar10/.ssh/authorized_keys && \
-    chmod 600 /home/fallingstar10/.ssh/authorized_keys
+RUN chown otter-pup:otter-pup /home/otter-pup/.ssh/authorized_keys && \
+    chmod 600 /home/otter-pup/.ssh/authorized_keys
 
-# ===== 阶段 6: 全局安装 Codex/Claude Code/uv =====
+# ===== 阶段 7: 全局安装 AI 开发工具与 uv =====
 RUN npm install -g @openai/codex @anthropic-ai/claude-code opencode-ai droid && \
     npm cache clean --force && \
     rm -rf /tmp/* /root/.npm /root/.node_modules
 
-# uv（Python 包管理/环境工具）
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL="/usr/local/bin" sh && \
     uv --version && \
     rm -rf /tmp/* /root/.cache/*
 
-# ===== 阶段 7: 环境变量配置 =====
-ENV PATH=/opt/micromamba/bin:/home/fallingstar10/.cargo/bin:/home/fallingstar10/.local/bin:/home/fallingstar10/go/bin:/root/.cargo/bin:/root/.local/bin:/root/go/bin:$PATH \
-    GOPATH=/home/fallingstar10/go \
+# ===== 阶段 8: 环境变量与终端配置 =====
+ENV MAMBA_ROOT_PREFIX=/opt/conda \
+    OTTER_HOME=/opt/otter \
+    OTTER_CORE_PREFIX=/opt/conda/envs/otter-core \
+    PATH=/opt/otter/bin:/opt/conda/envs/otter-core/bin:/home/otter-pup/go/bin:/home/otter-pup/.cargo/bin:/home/otter-pup/.local/bin:/root/.cargo/bin:/root/go/bin:$PATH \
+    GOPATH=/home/otter-pup/go \
     CRYPTOGRAPHY_OPENSSL_NO_LEGACY=1 \
     JAVA_OPTS="-Djava.awt.headless=true" \
-    R_PROGRESSR_ENABLE=TRUE \
     LANG=C.UTF-8 \
-    NODE_PATH=/home/fallingstar10/.local/lib/node_modules:/root/.local/lib/node_modules \
+    NODE_PATH=/home/otter-pup/.local/lib/node_modules:/root/.local/lib/node_modules \
     FACTORY_API_KEY=fk-uapnTYzc3bZ0zc5hWNmH-GebxIzVDVnbHQ8NGGEFuxoDNBmWYS2MxEkI5tgl3123
 
-# Bash 配置
-# root 配置
-RUN echo "export PATH=/opt/micromamba/bin:\$HOME/.cargo/bin:\$HOME/.local/bin:\$HOME/go/bin:\$PATH" >> /root/.bashrc && \
-    echo "export GOPATH=\$HOME/go" >> /root/.bashrc && \
-    echo "source /opt/micromamba/etc/profile.d/micromamba.sh" >> /root/.bashrc && \
-    rm -rf /tmp/*
+# 为 root 用户配置 .bashrc
+RUN echo "export PATH=/opt/otter/bin:/opt/conda/envs/otter-core/bin:\$HOME/go/bin:\$HOME/.cargo/bin:\$HOME/.local/bin:\$PATH" >> /root/.bashrc && \
+    echo "export GOPATH=\$HOME/go" >> /root/.bashrc
 
-# fallingstar10 配置（不自动初始化 Rust）
-RUN echo "export PATH=/opt/micromamba/bin:\$HOME/.cargo/bin:\$HOME/.local/bin:\$HOME/go/bin:\$PATH" >> /home/fallingstar10/.bashrc && \
-    echo "export GOPATH=\$HOME/go" >> /home/fallingstar10/.bashrc && \
-    echo "source /opt/micromamba/etc/profile.d/micromamba.sh" >> /home/fallingstar10/.bashrc && \
-    chown fallingstar10:fallingstar10 /home/fallingstar10/.bashrc && \
-    rm -rf /tmp/*
+# 为 otter-pup 用户配置 .bashrc
+RUN echo "export PATH=/opt/otter/bin:/opt/conda/envs/otter-core/bin:\$HOME/go/bin:\$HOME/.cargo/bin:\$HOME/.local/bin:\$PATH" >> /home/otter-pup/.bashrc && \
+    echo "export GOPATH=\$HOME/go" >> /home/otter-pup/.bashrc && \
+    chown otter-pup:otter-pup /home/otter-pup/.bashrc
 
-# ===== 阶段 8: 启动脚本 =====
-RUN cat > /usr/local/bin/start-services.sh <<'EOF' && rm -rf /tmp/*
+# ===== 阶段 9: 启动服务脚本 =====
+RUN cat > /usr/local/bin/start-services.sh <<'EOF'
 #!/usr/bin/env bash
 set -e
 
@@ -169,40 +134,41 @@ echo "--- 启动 SSH 服务 ---"
 /usr/sbin/sshd -D &
 SSH_PID=$!
 
-echo "--- 服务已启动 ---"
-echo "SSH: ssh fallingstar10@localhost -p 2222 (密码: fallingstar10)"
+echo "--- Holt 运行环境服务已就绪 ---"
+echo "SSH 访问: ssh otter-pup@localhost -p 2222 (默认密码: otter-pup)"
 echo ""
-echo "JupyterLab 需要手动启动，使用以下命令："
-echo "  su - fallingstar10 -c 'jupyter-lab --no-browser --allow-root --ip=* --port=8889 &'"
+echo "内置工具集:"
+echo "  Otter 全套工具: otter, enva, craftmake, xenofilx, pairbam, seq2mat, methx, qctb, fastqcx, matsrun"
+echo "  Otter-Core 运行环境: /opt/conda/envs/otter-core (核心生信工具已集成至 PATH)"
+echo "  AI 编程助手: claude-code, uv, codex"
+echo ""
+echo "JupyterLab 按需手动启动命令："
+echo "  su - otter-pup -c 'jupyter-lab --no-browser --allow-root --ip=* --port=8889 &'"
 echo ""
 echo "用户管理工具："
-echo "  add-user          # 交互式创建新用户"
-echo ""
-echo "Claude Code: claude-code (已全局安装)"
-echo "Rust 环境: 使用时需手动运行 source ~/.cargo/env"
+echo "  sudo add-user"
 
-# 等待 SSH 服务
+# 等待 SSH 服务退出
 trap 'kill -9 $SSH_PID 2>/dev/null' TERM INT QUIT
 wait $SSH_PID
 EOF
 
 RUN chmod +x /usr/local/bin/start-services.sh
 
-# ===== 阶段 9: 全局清理 =====
+# ===== 阶段 10: 清理与暴露端口 =====
 RUN pacman -Sc --noconfirm && \
     rm -rf /var/cache/pacman/pkg/* \
-           /home/builduser/.cache/* \
-           /home/builduser/.cargo/registry/* \
            /tmp/* \
-           /root/.cache/* \
-           /root/.local/share/pak/* \
-           /root/.local/share/pip/cache/*
+           /root/.cache/*
 
-# ===== 阶段 10: 环境暴露 =====
 EXPOSE 2222 8889 8080 8787
 
-# ===== 容器入口 =====
+# ===== 默认用户与入口 =====
+USER otter-pup
+WORKDIR /home/otter-pup
+
 ENTRYPOINT ["/usr/local/bin/start-services.sh"]
+
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD ssh -q fallingstar10@localhost -p 2222 exit || exit 1
+  CMD ssh -q otter-pup@localhost -p 2222 exit || exit 1

@@ -256,9 +256,8 @@ configure_bashrc() {
         cat >> "$bashrc" << 'EOF'
 
 # Holt environment
-export PATH=/opt/micromamba/bin:$HOME/.cargo/bin:$HOME/.local/bin:$HOME/go/bin:$PATH
+export PATH=/opt/otter/bin:/opt/conda/envs/otter-core/bin:$HOME/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH
 export GOPATH=$HOME/go
-source /opt/micromamba/etc/profile.d/micromamba.sh
 
 # Note: Rust environment needs manual initialization
 # Run: source ~/.cargo/env when needed

@@ -4,19 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Holt** is a streamlined suite of Docker containers designed for bioinformatics workflows and multi-language development. The project consists of one repository and two container images:
-- **`holt-build`**: Lightweight multi-language base container.
-- **`holt-run`**: Full development and runtime workspace with R bioinformatics packages, JupyterLab, SSH, and AI development tools.
+**Holt** is a streamlined suite of Docker containers designed for the [Otter](https://github.com/otterlab-bio/otter) bioinformatics ecosystem and multi-language development. The project consists of one repository and two container images published to **GitHub Container Registry (GHCR)**:
+- **`ghcr.io/otterlab-bio/holt-build`**: Base multi-language build container.
+- **`ghcr.io/otterlab-bio/holt-run`**: Full bioinformatics workbench with Otter suite, `otter-core` runtime, JupyterLab, SSH, and AI development tools.
 
-**Target Users**: Bioinformatics researchers, computational biologists, and data scientists working with genomics pipelines and multi-language tools.
+**Target Users**: Bioinformatics researchers, computational biologists, and software engineers working with genomics workflows and multi-language toolchains.
 
 **Container Architecture**:
 ```
 archlinux:latest
     ↓
-holt-build (Base: Python 3, R, pak, micromamba, yay, rustup, Node.js, npm, Go)
+holt-build (Go, Node.js/npm, Python 3, R, Rust, yay, user: otter-pup)
     ↓
-holt-run (R packages, JupyterLab [manual], Ark, Air, SSH [auto], Claude Code, uv, fallingstar10 user)
+holt-run (Otter suite, enva otter-core, JupyterLab, Ark, SSH, Claude Code, uv, user: otter-pup)
 ```
 
 ---
@@ -27,42 +27,48 @@ holt-run (R packages, JupyterLab [manual], Ark, Air, SSH [auto], Claude Code, uv
 
 - **Purpose**: Base multi-language compilation and development environment.
 - **Base Image**: `archlinux:latest` with parallel compilation flags in `makepkg.conf`.
-- **User**: `builduser` for AUR package installation.
-- **Package Managers**:
+- **Default User**: `otter-pup` (password: `otter-pup`, full sudo access).
+- **Languages & Package Managers**:
+  - `go` (system package via pacman)
+  - `nodejs` & `npm` (system package via pacman)
+  - `python` & `pip` (system package via pacman)
+  - `r` & `pak` (system package via pacman + CRAN mirror)
+  - `rustup` & `cargo` (Rust stable)
   - `yay` (AUR helper)
-  - `pak` (R package manager)
-  - `micromamba` (lightweight Conda alternative)
-  - `pip` (Python)
-  - `cargo` (Rust)
-  - `npm` (Node.js)
-  - `go mod` (Go)
-- **Languages**: Python 3, R, Rust, Node.js, Go.
 - **Environment**:
   ```bash
-  PATH=/opt/micromamba/bin:/root/.cargo/bin:/root/.local/bin:/root/go/bin:$PATH
-  GOPATH=/root/go
+  PATH=/home/otter-pup/go/bin:/home/otter-pup/.cargo/bin:/home/otter-pup/.local/bin:/root/.cargo/bin:/root/go/bin:$PATH
+  GOPATH=/home/otter-pup/go
   ```
 
 ---
 
-### 2. **holt-run** (`holt-run/Dockerfile`): Runtime & Workspace Container
+### 2. **holt-run** (`holt-run/Dockerfile`): Runtime & Workbench Container
 
-- **Purpose**: Complete runtime environment with statistical packages, services, and developer tooling.
-- **Inherits**: `fallingstar10/holt-build:latest`
-- **R Packages**:
-  - **Group 1**: Shiny ecosystem & utilities (DT, shinyWidgets, shiny, bslib, optparse, openxlsx, etc.)
-  - **Group 2**: Statistics & visualization (plotly, pROC, sva, sampling, pdftools, umap, tidyverse, etc.)
-  - **Group 6**: Machine learning (mlr3verse)
-  - **Group 7**: Developer tools (languageserver, lintr)
+- **Purpose**: Complete runtime environment with Otter bioinformatics toolchain, JupyterLab, SSH, and developer tooling.
+- **Inherits**: `ghcr.io/otterlab-bio/holt-build:latest`
+- **Default User**: `otter-pup` (password: `otter-pup`, full sudo access).
+- **Otter Tool Suite**:
+  - `otter` (workflow orchestrator)
+  - `enva` (Rattler-based environment manager)
+  - `craftmake` (pipeline client)
+  - `xenofilx` (PDX/CDX human-mouse read filtering)
+  - `pairbam` (paired-end BAM reconciliation)
+  - `seq2mat` (matrix transformation)
+  - `methx` (methylation analysis suite)
+  - `qctb` (quality assessment)
+  - `fastqcx` (FASTQ QC)
+  - `matsrun` (rMATS alternative splicing runner)
+- **Conda Environment**:
+  - `otter-core` pre-initialized via `enva` at `/opt/conda/envs/otter-core`
+  - Includes: `bismark`, `bowtie2`, `samtools`, `star`, `htseq`, `rmats`, `fastqc`, `seqkit`, `picard`, `macs2`, `bwa`
 - **Services & Tools**:
   - **SSH**: Port 2222 (auto-started via `/usr/local/bin/start-services.sh`)
   - **JupyterLab**: Port 8889 (manual start required)
   - **Ark (Posit Dev)**: Enhanced R kernel for JupyterLab
-  - **Air (Posit Dev)**: R developer workflow tool
-  - **Claude Code CLI**: Installed globally via npm
+  - **Claude Code CLI**: Installed globally via npm (`claude-code`)
   - **uv**: Fast Python package manager
   - **add-user tool**: Interactive script at `/usr/local/bin/add-user`
-- **Default User**: `fallingstar10` (password: `fallingstar10`, sudo access enabled).
 - **Reserved Ports**: 8080, 8787.
 
 ---
@@ -73,10 +79,10 @@ holt-run (R packages, JupyterLab [manual], Ark, Air, SSH [auto], Claude Code, uv
 
 ```bash
 # Build holt-build
-docker build -t fallingstar10/holt-build:latest ./holt-build
+docker build -t ghcr.io/otterlab-bio/holt-build:latest ./holt-build
 
 # Build holt-run
-docker build -t fallingstar10/holt-run:latest ./holt-run
+docker build -t ghcr.io/otterlab-bio/holt-run:latest ./holt-run
 
 # Or build both via docker compose
 docker compose build
@@ -86,7 +92,7 @@ docker compose build
 
 ```bash
 # Interactive shell in holt-build
-docker run -it --name holt-build fallingstar10/holt-build:latest
+docker run -it --name holt-build ghcr.io/otterlab-bio/holt-build:latest
 
 # Run holt-run workspace
 docker run -d \
@@ -95,7 +101,7 @@ docker run -d \
   -p 8080:8080 \
   -p 8787:8787 \
   --name holt-run \
-  fallingstar10/holt-run:latest
+  ghcr.io/otterlab-bio/holt-run:latest
 
 # Or launch holt-run with docker compose
 docker compose up -d holt-run
@@ -105,20 +111,20 @@ docker compose up -d holt-run
 
 **SSH Access** (auto-started on port 2222):
 ```bash
-ssh fallingstar10@localhost -p 2222
-# Password: fallingstar10
+ssh otter-pup@localhost -p 2222
+# Password: otter-pup
 ```
 
 **JupyterLab** (start manually inside container):
 ```bash
 # Start directly from host
-docker exec holt-run su - fallingstar10 -c "jupyter-lab --no-browser --allow-root --ip=* --port=8889" &
+docker exec holt-run su - otter-pup -c "jupyter-lab --no-browser --allow-root --ip=* --port=8889" &
 ```
 Then navigate to: `http://localhost:8889`
 
 **User Management**:
 ```bash
-docker exec -it holt-run add-user
+docker exec -it holt-run sudo add-user
 ```
 
 ---
@@ -129,12 +135,12 @@ docker exec -it holt-run add-user
 
 - **`holt-build.yml`**:
   - Scheduled: Fridays at 06:00 UTC
-  - Push trigger on: `holt-build/**`, `.github/workflows/**`
-  - Publishes: `${{ secrets.DOCKER_HUB_USERNAME }}/holt-build:latest`
+  - Push trigger on: `holt-build/**`, `.github/workflows/holt-build.yml`
+  - Publishes: `ghcr.io/otterlab-bio/holt-build:latest`
 - **`holt-run.yml`**:
   - Scheduled: Fridays at 08:00 UTC
-  - Push trigger on: `holt-run/**`, `.github/workflows/**`
-  - Publishes: `${{ secrets.DOCKER_HUB_USERNAME }}/holt-run:latest`
+  - Push trigger on: `holt-run/**`, `.github/workflows/holt-run.yml`
+  - Publishes: `ghcr.io/otterlab-bio/holt-run:latest`
 
 ---
 
@@ -147,12 +153,12 @@ holt/
 │   └── makepkg.conf        # Arch Linux parallel build settings
 ├── holt-run/
 │   ├── Dockerfile          # Runtime and workspace container definition
-│   └── add_user_interactive.sh # User management script for image build
+│   ├── add_user_interactive.sh # User management script for image build
+│   └── envs/               # Otter environment configurations
 ├── .github/workflows/
-│   ├── holt-build.yml      # CI/CD for holt-build
-│   └── holt-run.yml        # CI/CD for holt-run
+│   ├── holt-build.yml      # CI/CD for holt-build (GHCR)
+│   └── holt-run.yml        # CI/CD for holt-run (GHCR)
 ├── docker-compose.yml      # Multi-container orchestration
-├── add_user_interactive.sh # Standalone interactive user setup script
 ├── README.md               # User documentation
 ├── CLAUDE.md               # Development guide
 ├── LICENSE                 # MIT License
@@ -160,11 +166,3 @@ holt/
 ├── .dockerignore
 └── .gitattributes
 ```
-
----
-
-## Important Notes
-
-1. **JupyterLab Manual Start**: JupyterLab is NOT auto-started by default to save idle resources. Users launch it when needed.
-2. **Rust Environment**: For `fallingstar10`, run `source ~/.cargo/env` to initialize Rust in interactive shells.
-3. **CRAN Mirror**: Configured by default to Tsinghua CRAN mirror for stable, fast R package installations.

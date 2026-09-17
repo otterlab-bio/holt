@@ -14,13 +14,14 @@ RUN pacman -S --needed --noconfirm \
     pigz pbzip2 cmake gcc-fortran fastfetch && \
     pacman -Scc --noconfirm
 
-# 创建 builduser
-RUN useradd -m builduser && \
-    echo 'builduser ALL=(ALL) NOPASSWD: /usr/bin/pacman, /usr/bin/yay' > /etc/sudoers.d/builduser && \
-    chmod 0440 /etc/sudoers.d/builduser
+# 创建默认用户 otter-pup（具有 sudo 权限）
+RUN useradd -m -s /bin/bash -u 1000 otter-pup && \
+    echo 'otter-pup:otter-pup' | chpasswd && \
+    echo 'otter-pup ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/otter-pup && \
+    chmod 0440 /etc/sudoers.d/otter-pup
 
-# 安装 yay
-USER builduser
+# 安装 yay（使用 otter-pup 构建）
+USER otter-pup
 WORKDIR /tmp
 RUN set -eux; \
     git config --global http.version HTTP/1.1; \
@@ -43,8 +44,8 @@ RUN set -eux; \
 WORKDIR /
 USER root
 
-# 安装 Python、R、Node.js、Go
-RUN pacman -S --noconfirm python python-pip r nodejs npm go && \
+# 内置 Go、Node.js / npm、Python 3、R
+RUN pacman -S --needed --noconfirm python python-pip r nodejs npm go && \
     pacman -Sc --noconfirm && \
     rm -rf /var/cache/pacman/pkg/* /tmp/* && \
     rm -rf /root/.cache/* /root/.local/share/pip/cache/*
@@ -64,43 +65,32 @@ RUN RHOME="$(R RHOME)" && \
     grep -q '^R_LIBS_USER=' "$RHOME/etc/Renviron.site" || \
       echo 'R_LIBS_USER=~/.local/share/R/%p-library/%V' >> "$RHOME/etc/Renviron.site"
 
-# 安装 micromamba（官方二进制，避免 AUR 网络抖动）
-RUN set -eux; \
-    arch="$(uname -m)"; \
-    case "$arch" in \
-      x86_64) mamba_arch='linux-64' ;; \
-      aarch64|arm64) mamba_arch='linux-aarch64' ;; \
-      *) echo "Unsupported arch: $arch" >&2; exit 1 ;; \
-    esac; \
-    curl -fL --retry 5 --retry-delay 2 --connect-timeout 20 \
-      "https://micro.mamba.pm/api/micromamba/${mamba_arch}/latest" -o /tmp/micromamba.tar.bz2; \
-    mkdir -p /opt/micromamba/bin; \
-    tar -xjf /tmp/micromamba.tar.bz2 -C /tmp bin/micromamba; \
-    install -m 0755 /tmp/bin/micromamba /opt/micromamba/bin/micromamba; \
-    rm -rf /tmp/micromamba.tar.bz2 /tmp/bin /root/.cache/* /tmp/*
-# 验证 micromamba 安装
-RUN /opt/micromamba/bin/micromamba --version
-
 # 安装 Rust
 RUN pacman -S --noconfirm rustup && \
     rustup default stable && \
     pacman -Sc --noconfirm && \
     rm -rf /var/cache/pacman/pkg/* /tmp/*
 
-# 配置环境变量
-ENV GOPATH=/root/go
-ENV PATH=/opt/micromamba/bin:/root/.cargo/bin:/root/.local/bin:/root/go/bin:$PATH
+# 配置环境变量与工作目录
+ENV GOPATH=/home/otter-pup/go
+ENV PATH=/home/otter-pup/go/bin:/home/otter-pup/.cargo/bin:/home/otter-pup/.local/bin:/root/.cargo/bin:/root/go/bin:$PATH
 
-# 为 builduser 配置环境
-RUN echo 'export PATH=/opt/micromamba/bin:$HOME/.cargo/bin:$HOME/go/bin:$PATH' >> /home/builduser/.bashrc && \
-    echo 'export GOPATH=$HOME/go' >> /home/builduser/.bashrc
+# 为 otter-pup 初始化环境
+RUN mkdir -p /home/otter-pup/go/bin /home/otter-pup/.local/bin /home/otter-pup/.cargo/bin && \
+    echo 'export GOPATH=$HOME/go' >> /home/otter-pup/.bashrc && \
+    echo 'export PATH=$HOME/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH' >> /home/otter-pup/.bashrc && \
+    chown -R otter-pup:otter-pup /home/otter-pup
 
-# 验证安装
+# 验证语言环境安装
 RUN python --version && R --version && node --version && npm --version && \
-    micromamba --version && rustc --version && cargo --version && go version
+    rustc --version && cargo --version && go version
+
+# 设置默认用户
+USER otter-pup
+WORKDIR /home/otter-pup
 
 CMD ["/bin/bash"]
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD python --version && R --version && node --version && cargo --version || exit 1
+  CMD python --version && R --version && node --version && cargo --version && go version || exit 1
