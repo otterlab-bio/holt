@@ -92,14 +92,24 @@ RUN chown otter-pup:otter-pup /home/otter-pup/.ssh/authorized_keys && \
     chmod 600 /home/otter-pup/.ssh/authorized_keys
 
 # ===== 阶段 7: 全局安装 AI 开发工具与 uv =====
-RUN npm install -g @openai/codex @anthropic-ai/claude-code opencode-ai droid && \
-    (which claude >/dev/null 2>&1 && ln -sf "$(which claude)" /usr/local/bin/claude-code || true) && \
+RUN npm install -g --include=optional @openai/codex @anthropic-ai/claude-code @anthropic-ai/claude-code-linux-x64 opencode-ai droid && \
+    (node "$(npm root -g)/@anthropic-ai/claude-code/install.cjs" || true) && \
+    (if [ -f "$(npm root -g)/@anthropic-ai/claude-code-linux-x64/claude" ]; then \
+       ln -sf "$(npm root -g)/@anthropic-ai/claude-code-linux-x64/claude" /usr/local/bin/claude; \
+       ln -sf "$(npm root -g)/@anthropic-ai/claude-code-linux-x64/claude" /usr/local/bin/claude-code; \
+     elif which claude >/dev/null 2>&1; then \
+       ln -sf "$(which claude)" /usr/local/bin/claude-code; \
+     fi) && \
+    chmod +x /usr/local/bin/claude* && \
     npm cache clean --force && \
-    rm -rf /tmp/* /root/.npm /root/.node_modules
+    rm -rf /tmp/* /root/.npm
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL="/usr/local/bin" sh && \
     uv --version && \
     rm -rf /tmp/* /root/.cache/*
+
+# 验证全局 AI 工具
+RUN claude --version || claude-code --version
 
 # ===== 阶段 8: 环境变量与终端配置 =====
 ENV RUSTUP_HOME=/opt/rustup \
