@@ -155,9 +155,17 @@ jobs:
           fi
           docker run --rm --platform ${{ matrix.platform }} holt-run:build bash -ec '
             set -e
-            cp /opt/otter/envs/otter-core.yaml /tmp/otter-core.yaml
-            enva create --yaml /tmp/otter-core.yaml --name otter-core --force --clean-cache
             prefix=/opt/conda/envs/otter-core
+            echo "otter env dir:"; ls -la /opt/otter/envs 2>&1 || true
+            echo "prefix:"; ls "$prefix" 2>&1 | head || true
+            # The image pre-creates otter-core at build time. Only create it
+            # when missing: enva --force renames the env, which fails on
+            # overlayfs ("Cross-device link").
+            if [[ ! -f "$prefix/conda-meta/history" ]]; then
+              yaml=/opt/otter/envs/otter-core.yaml
+              test -f "$yaml" || { echo "missing $yaml" >&2; exit 1; }
+              enva create --yaml "$yaml" --name otter-core --clean-cache
+            fi
             test -f "$prefix/conda-meta/history"
             run() { enva run otter-core -- "$@"; }
             run samtools --version | head -n 1
