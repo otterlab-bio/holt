@@ -87,10 +87,20 @@ jobs:
             "https://api.github.com/repos/${OTTER_REPO}/releases/latest" \
             | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
           test -n "$tag" || { echo 'could not resolve the latest OTTER release' >&2; exit 1; }
-          platforms="$(GITHUB_TOKEN="$GITHUB_TOKEN" bash holt-run/scripts/resolve-platforms.sh --version "$tag")"
+          release_platforms="$(GITHUB_TOKEN="$GITHUB_TOKEN" bash holt-run/scripts/resolve-platforms.sh --version "$tag")"
+          # The holt-build base image is built from docker.io/library/archlinux,
+          # which publishes only linux/amd64, so intersect with what the base
+          # can actually provide. Revisit if the base gains an arm64 manifest.
+          platforms=()
+          IFS=',' read -r -a wanted <<< "$release_platforms"
+          for platform in "${wanted[@]}"; do
+            [[ "$platform" == "linux/amd64" ]] && platforms+=("$platform")
+          done
+          [[ ${#platforms[@]} -gt 0 ]] || { echo "no buildable platform for ${tag}" >&2; exit 1; }
+          joined="$(IFS=,; echo "${platforms[*]}")"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "platforms=$platforms" >> "$GITHUB_OUTPUT"
-          echo "Building ${tag} for ${platforms}"
+          echo "platforms=$joined" >> "$GITHUB_OUTPUT"
+          echo "Building ${tag} for ${joined} (release ships ${release_platforms})"
 
       - name: Build every platform the release ships
         uses: docker/build-push-action@v6

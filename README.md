@@ -151,8 +151,11 @@ To build a reproducible image, pin the release:
 docker build --build-arg OTTER_VERSION=v1.3.0 -t holt-run ./holt-run
 ```
 
-`linux/amd64` and `linux/arm64` are both supported; CI builds and publishes the
-multi-architecture manifest for each release.
+The image is published for `linux/amd64`. The base layer is built from
+`docker.io/library/archlinux`, which publishes no arm64 manifest, so an arm64
+container image cannot be assembled yet. Arm64 users can still run the native
+OTTER binaries from the release, and the installer script itself is
+architecture-aware for the day the base image gains arm64 support.
 
 ## 🧰 Otter Toolchain
 
