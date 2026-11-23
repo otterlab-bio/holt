@@ -1,0 +1,124 @@
+name: Verify arm64 container (no publish)
+
+# Verification only. The published holt-run image is amd64 because its Arch
+# Linux base has no arm64 manifest; this workflow proves the arm64 release
+# assets and the otter-core runtime work inside an arm64 container anyway.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'holt-run/Dockerfile.arm64-verify'
+      - 'holt-run/scripts/**'
+      - 'holt-run/envs/**'
+      - 'holt-run/tests/**'
+      - '.github/workflows/arm64-verify.yml'
+  schedule:
+    # Weekly, so a new OTTER release is exercised on arm64 without publishing.
+    - cron: '0 8 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    # Native arm64 runner: no QEMU, so the binaries and conda packages really
+    # execute on the target architecture.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - name: Check Out Repo
+        uses: actions/checkout@v4
+
+      - name: Static checks on the verification Dockerfile
+        run: |
+          bash holt-run/tests/verify-dockerfile.sh
+          bash holt-run/tests/install-otter-tools.test.sh
+          bash holt-run/tests/resolve-platforms.test.sh
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve the latest stable OTTER release
+        id: otter
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="$(curl -fsSL --retry 5 --retry-delay 2 \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            https://api.github.com/repos/otterlab-bio/otter/releases/latest \
+            | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+          test -n "$tag" || { echo 'could not resolve the latest OTTER release' >&2; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Verifying arm64 with OTTER ${tag}"
+
+      - name: Build the arm64 verification image (never pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./holt-run
+          file: ./holt-run/Dockerfile.arm64-verify
+          platforms: linux/arm64
+          push: false
+          load: true
+          build-args: |
+            OTTER_VERSION=${{ steps.otter.outputs.tag }}
+          tags: holt-run:arm64-verify
+          cache-from: type=gha,scope=arm64-verify
+          cache-to: type=gha,mode=max,scope=arm64-verify
+
+      - name: Run every tool natively on arm64
+        run: |
+          docker run --rm holt-run:arm64-verify bash -ec '
+            set -e
+            echo "uname: $(uname -m)"
+            test "$(uname -m)" = "aarch64"
+            for tool in otter enva craftmake xenofilx pairbam seq2mat methx qctb fastqcx matsrun; do
+              printf "%-10s " "$tool"; "$tool" --version
+            done
+            test "$(cat /opt/otter/VERSION)" = "${{ steps.otter.outputs.tag }}"
+            file -b /opt/otter/bin/methx | grep -q aarch64
+          '
+
+      - name: Create the otter-core environment on arm64
+        run: |
+          docker run --rm holt-run:arm64-verify bash -ec '
+            set -e
+            cp /opt/otter/envs/otter-core.yaml /tmp/otter-core.yaml
+            enva create --yaml /tmp/otter-core.yaml --name otter-core --force --clean-cache
+            prefix=/opt/conda/envs/otter-core
+            test -f "$prefix/conda-meta/history"
+
+            # Compiled binaries must be aarch64. bowtie2/fastqc are wrappers
+            # (Perl / Python) and bismark_genome_preparation is a symlink, so
+            # follow links and check the tools that really are ELF.
+            for bin in samtools bismark STAR; do
+              printf "%-10s " "$bin"
+              file -L -b "$prefix/bin/$bin" | cut -d, -f1-2
+              file -L -b "$prefix/bin/$bin" | grep -q aarch64
+            done
+
+            # Run through the environment, the way otter does: bowtie2 needs its
+            # packaged Perl modules and fastqc needs the env python3.
+            run() { enva run otter-core -- "$@"; }
+            printf "samtools  "; run samtools --version | head -n 1
+            printf "bismark   "; run bismark --version | head -n 1
+            printf "bowtie2   "; run bowtie2 --version | head -n 1
+            printf "STAR      "; run STAR --version
+            printf "fastqc    "; run fastqc --version | head -n 1
+            printf "seqkit    "; run seqkit version
+            printf "rmats     "; run rmats.py --version 2>&1 | head -n 1
+          '
+
+      - name: Job summary
+        if: always()
+        continue-on-error: true
+        run: |
+          {
+            echo '## arm64 container verification'
+            echo ''
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| OTTER release | ${{ steps.otter.outputs.tag || 'unresolved' }} |"
+            echo "| Base image | ubuntu:24.04 (arm64) |"
+            echo "| Published | no |"
+          } >> "$GITHUB_STEP_SUMMARY"

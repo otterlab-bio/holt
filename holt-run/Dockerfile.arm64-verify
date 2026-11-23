@@ -1,0 +1,40 @@
+# Verification-only image. It proves that the published arm64 OTTER assets and
+# the otter-core runtime work inside an arm64 container. It is never pushed to
+# a registry: the published holt-run image is amd64-only because the Arch Linux
+# base it inherits publishes no arm64 manifest.
+#
+# Build (on a native arm64 host):
+#   docker build -f Dockerfile.arm64-verify --build-arg OTTER_VERSION=v1.3.0 .
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ARG OTTER_VERSION=latest
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates curl file gzip tar xz-utils bzip2 \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/install-otter-tools.sh /usr/local/bin/install-otter-tools
+COPY envs/ /opt/otter/envs/
+
+# Install the arm64 release assets with the same script and checksum
+# verification the real image uses.
+RUN chmod +x /usr/local/bin/install-otter-tools \
+ && ARCH=arm64 OTTER_VERSION="${OTTER_VERSION}" /usr/local/bin/install-otter-tools
+
+# Fail the build if any tool is the wrong architecture or cannot start.
+RUN set -eu; \
+    for tool in otter enva craftmake xenofilx pairbam seq2mat methx qctb fastqcx matsrun; do \
+      file -b "/opt/otter/bin/${tool}" | grep -q 'aarch64' \
+        || { echo "${tool} is not an aarch64 binary" >&2; exit 1; }; \
+      "${tool}" --version; \
+    done
+
+# enva honours MAMBA_ROOT_PREFIX only when it already exists, so create it and
+# mirror the layout the published image uses.
+ENV MAMBA_ROOT_PREFIX=/opt/conda \
+    OTTER_CORE_PREFIX=/opt/conda/envs/otter-core
+RUN mkdir -p /opt/conda/envs /opt/otter/bin
+
+CMD ["bash"]
