@@ -134,7 +134,12 @@ jobs:
 
       - name: Verify the image natively
         run: |
-          docker tag ghcr.io/otterlab-bio/holt-run:${{ matrix.arch }}-${{ github.sha }} holt-run:build
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            docker tag ghcr.io/otterlab-bio/holt-run:${{ matrix.arch }}-${{ github.sha }} holt-run:build
+          else
+            docker pull ghcr.io/otterlab-bio/holt-run:${{ matrix.arch }}-${{ github.sha }}
+            docker tag ghcr.io/otterlab-bio/holt-run:${{ matrix.arch }}-${{ github.sha }} holt-run:build
+          fi
           docker run --rm --platform ${{ matrix.platform }} holt-run:build \
             sh -c "uname -m && otter --version && enva --version && \
                    test \"\$(cat /opt/otter/VERSION)\" = '${{ steps.otter.outputs.tag }}' && \
@@ -142,7 +147,12 @@ jobs:
 
       - name: Create otter-core and run the toolchain natively
         run: |
-          docker tag ghcr.io/otterlab-bio/holt-run:${{ matrix.arch }}-${{ github.sha }} holt-run:build
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            docker tag ghcr.io/otterlab-bio/holt-run:${{ matrix.arch }}-${{ github.sha }} holt-run:build
+          else
+            docker pull ghcr.io/otterlab-bio/holt-run:${{ matrix.arch }}-${{ github.sha }}
+            docker tag ghcr.io/otterlab-bio/holt-run:${{ matrix.arch }}-${{ github.sha }} holt-run:build
+          fi
           docker run --rm --platform ${{ matrix.platform }} holt-run:build bash -ec '
             set -e
             cp /opt/otter/envs/otter-core.yaml /tmp/otter-core.yaml

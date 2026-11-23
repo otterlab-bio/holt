@@ -72,7 +72,14 @@ jobs:
 
       - name: Smoke-test the base natively
         run: |
-          docker tag ghcr.io/otterlab-bio/holt-build:${{ matrix.arch }}-${{ github.sha }} holt-build:build
+          # A published build only exists in the registry; a pull-request build
+          # is loaded locally. Pull only in the publish case.
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            docker tag ghcr.io/otterlab-bio/holt-build:${{ matrix.arch }}-${{ github.sha }} holt-build:build
+          else
+            docker pull ghcr.io/otterlab-bio/holt-build:${{ matrix.arch }}-${{ github.sha }}
+            docker tag ghcr.io/otterlab-bio/holt-build:${{ matrix.arch }}-${{ github.sha }} holt-build:build
+          fi
           docker run --rm --platform ${{ matrix.platform }} holt-build:build \
             sh -c "uname -m && python --version && R --version | head -n 1 && \
                    node --version && npm --version && cargo --version && go version && whoami"
