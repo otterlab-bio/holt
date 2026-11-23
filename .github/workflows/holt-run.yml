@@ -45,15 +45,45 @@ jobs:
             exit 1
           fi
 
-  docker:
+      - name: Resolve the OTTER release and the platforms it ships
+        id: otter
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="$(curl -fsSL --retry 5 --retry-delay 2 \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/otterlab-bio/otter/releases/latest" \
+            | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+          test -n "$tag" || { echo 'could not resolve the latest OTTER release' >&2; exit 1; }
+          platforms="$(GITHUB_TOKEN="${GITHUB_TOKEN}" bash holt-run/scripts/resolve-platforms.sh --version "$tag")"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "platforms=$platforms" >> "$GITHUB_OUTPUT"
+          echo "Resolved OTTER ${tag} for ${platforms}"
+
+  build:
     needs: test
-    runs-on: ubuntu-latest
     if: >-
       github.event_name != 'workflow_run' ||
       github.event.workflow_run.conclusion == 'success'
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
     permissions:
       packages: write
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            arch: amd64
+          # Native arm64 runner: the holt-run image pulls 2.5 GB of conda
+          # packages, which is impractical under QEMU.
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
     env:
       OTTER_REPO: otterlab-bio/otter
       IMAGE: ghcr.io/otterlab-bio/holt-run
@@ -61,22 +91,7 @@ jobs:
       - name: Check Out Repo
         uses: actions/checkout@v4
 
-      # The holt-build base image is private, so authentication is required even
-      # on pull requests. Pull requests never push; only the publish job does.
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up QEMU (arm64 emulation)
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Resolve the OTTER release and the platforms it ships
+      - name: Resolve the OTTER release
         id: otter
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -87,60 +102,122 @@ jobs:
             "https://api.github.com/repos/${OTTER_REPO}/releases/latest" \
             | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
           test -n "$tag" || { echo 'could not resolve the latest OTTER release' >&2; exit 1; }
-          release_platforms="$(GITHUB_TOKEN="$GITHUB_TOKEN" bash holt-run/scripts/resolve-platforms.sh --version "$tag")"
-          # The holt-build base image is built from docker.io/library/archlinux,
-          # which publishes only linux/amd64, so intersect with what the base
-          # can actually provide. Revisit if the base gains an arm64 manifest.
-          platforms=()
-          IFS=',' read -r -a wanted <<< "$release_platforms"
-          for platform in "${wanted[@]}"; do
-            [[ "$platform" == "linux/amd64" ]] && platforms+=("$platform")
-          done
-          [[ ${#platforms[@]} -gt 0 ]] || { echo "no buildable platform for ${tag}" >&2; exit 1; }
-          joined="$(IFS=,; echo "${platforms[*]}")"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "platforms=$joined" >> "$GITHUB_OUTPUT"
-          echo "Building ${tag} for ${joined} (release ships ${release_platforms})"
 
-      - name: Build every platform the release ships
+      # holt-build is private, so authentication is required even on pull
+      # requests. Pull requests never push; only pushes/dispatches do.
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build this architecture natively
         uses: docker/build-push-action@v6
         with:
           context: ./holt-run
-          platforms: ${{ steps.otter.outputs.platforms }}
-          # Pull requests build the image to prove it works, but never publish.
+          platforms: ${{ matrix.platform }}
           push: ${{ github.event_name != 'pull_request' }}
-          load: false
+          load: ${{ github.event_name == 'pull_request' }}
           build-args: |
             OTTER_VERSION=${{ steps.otter.outputs.tag }}
           tags: |
-            ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:${{ steps.otter.outputs.tag }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ghcr.io/otterlab-bio/holt-run:${{ matrix.arch }}-${{ github.sha }}
+            holt-run:build
+          cache-from: type=gha,scope=holt-run-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=holt-run-${{ matrix.arch }}
 
-      - name: Build a loadable amd64 image for the smoke test
-        uses: docker/build-push-action@v6
-        with:
-          context: ./holt-run
-          platforms: linux/amd64
-          push: false
-          load: true
-          build-args: |
-            OTTER_VERSION=${{ steps.otter.outputs.tag }}
-          tags: holt-run:smoke
-          cache-from: type=gha
-
-      - name: Verify the image starts and reports the resolved release
+      - name: Verify the image natively
         run: |
-          docker run --rm --platform linux/amd64 holt-run:smoke \
-            sh -c "otter --version && enva --version && \
+          docker run --rm --platform ${{ matrix.platform }} holt-run:build \
+            sh -c "uname -m && otter --version && enva --version && \
                    test \"\$(cat /opt/otter/VERSION)\" = '${{ steps.otter.outputs.tag }}' && \
                    jupyter-lab --version && (claude --version || claude-code --version) && whoami"
 
-      - name: Verify the published multi-arch manifest
-        if: github.event_name != 'pull_request'
+      - name: Create otter-core and run the toolchain natively
         run: |
-          docker buildx imagetools inspect "${IMAGE}:${{ steps.otter.outputs.tag }}"
+          docker run --rm --platform ${{ matrix.platform }} holt-run:build bash -ec '
+            set -e
+            cp /opt/otter/envs/otter-core.yaml /tmp/otter-core.yaml
+            enva create --yaml /tmp/otter-core.yaml --name otter-core --force --clean-cache
+            prefix=/opt/conda/envs/otter-core
+            test -f "$prefix/conda-meta/history"
+            run() { enva run otter-core -- "$@"; }
+            run samtools --version | head -n 1
+            run bismark --version | head -n 1
+            run bowtie2 --version | head -n 1
+            run STAR --version
+            run fastqc --version | head -n 1
+            run seqkit version
+          '
+
+      - name: Report the per-arch digest
+        if: github.event_name != 'pull_request'
+        id: digest
+        run: |
+          digest="$(docker buildx imagetools inspect \
+            "ghcr.io/otterlab-bio/holt-run:${{ matrix.arch }}-${GITHUB_SHA}" \
+            --format '{{json .Manifest}}' | jq -r '.digest')"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "${{ matrix.platform }} -> $digest"
+          mkdir -p digests
+          printf '%s\n' "$digest" > "digests/${{ matrix.arch }}"
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: run-digest-${{ matrix.arch }}
+          path: digests/${{ matrix.arch }}
+          if-no-files-found: error
+
+  manifest:
+    needs: [test, build]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+      contents: read
+    env:
+      IMAGE: ghcr.io/otterlab-bio/holt-run
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: run-digest-*
+          path: digests
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve the OTTER release for the tag
+        id: otter
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="$(curl -fsSL --retry 5 --retry-delay 2 \
+            -H 'Authorization: Bearer '"${GITHUB_TOKEN}" \
+            https://api.github.com/repos/otterlab-bio/otter/releases/latest \
+            | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble the multi-arch manifest
+        run: |
+          amd64="$(cat digests/run-digest-amd64/amd64)"
+          arm64="$(cat digests/run-digest-arm64/arm64)"
+          docker buildx imagetools create \
+            -t "${IMAGE}:latest" \
+            -t "${IMAGE}:${{ steps.otter.outputs.tag }}" \
+            "${IMAGE}@${amd64}" \
+            "${IMAGE}@${arm64}"
+
+      - name: Verify the published multi-arch manifest
+        run: docker buildx imagetools inspect "${IMAGE}:${{ steps.otter.outputs.tag }}"
 
       - name: Job summary
         if: always()
@@ -149,9 +226,10 @@ jobs:
           {
             echo '## holt-run'
             echo ''
-            echo "| Field | Value |"
-            echo "| --- | --- |"
+            echo '| Platform | Runner |'
+            echo '| --- | --- |'
+            echo '| linux/amd64 | ubuntu-24.04 |'
+            echo '| linux/arm64 | ubuntu-24.04-arm |'
+            echo ''
             echo "| OTTER release | ${{ steps.otter.outputs.tag || 'unresolved' }} |"
-            echo "| Platforms | ${{ steps.otter.outputs.platforms || 'unresolved' }} |"
-            echo "| Published | ${{ github.event_name != 'pull_request' }} |"
           } >> "$GITHUB_STEP_SUMMARY"

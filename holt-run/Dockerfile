@@ -1,3 +1,5 @@
+# holt-build is now multi-arch (menci/archlinuxarm), so this image can be
+# built for linux/amd64 and linux/arm64 from the same Dockerfile.
 ARG BASE_IMAGE=ghcr.io/otterlab-bio/holt-build:latest
 FROM ${BASE_IMAGE}
 
@@ -11,8 +13,15 @@ ARG TARGETARCH
 
 USER root
 
-# 配置 pacman 并行下载
-RUN sed -i 's/^#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
+# 配置 pacman 并行下载，并关闭 pacman 7 的 Landlock 沙箱（BuildKit 无法切换到
+# 'alpm' 沙箱用户）。holt-build 已经在构建期关闭过，这里再显式设一次，保证
+# 该镜像不依赖基础层的历史状态。
+RUN sed -i \
+      -e 's/^#ParallelDownloads/ParallelDownloads/' \
+      -e 's/^#DisableSandboxFilesystem/DisableSandboxFilesystem/' \
+      -e 's/^#DisableSandboxSyscalls/DisableSandboxSyscalls/' \
+      /etc/pacman.conf && \
+    grep -q '^DisableSandboxFilesystem' /etc/pacman.conf
 
 # ===== 阶段 1: 基础系统依赖安装 =====
 RUN pacman -Sy --noconfirm && \

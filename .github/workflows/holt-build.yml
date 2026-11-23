@@ -9,16 +9,106 @@ on:
     paths:
       - 'holt-build/**'
       - '.github/workflows/holt-build.yml'
+  # Build each architecture without publishing, so a broken arm64 base is caught
+  # before merge.
+  pull_request:
+    paths:
+      - 'holt-build/**'
+      - '.github/workflows/holt-build.yml'
+
+permissions:
+  contents: read
 
 jobs:
-  docker:
-    runs-on: ubuntu-latest
+  build:
+    # Build each architecture on a native runner. QEMU emulation of the Arch
+    # bootstrap (R packages, rustup) was far too slow and never finished, so the
+    # per-arch digests are produced natively and then combined into one index.
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      packages: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+    steps:
+      - name: Check Out Repo
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and verify this architecture natively
+        uses: docker/build-push-action@v6
+        with:
+          context: ./holt-build
+          platforms: ${{ matrix.platform }}
+          # Pull requests build but never publish.
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: |
+            ghcr.io/otterlab-bio/holt-build:${{ matrix.arch }}-${{ github.sha }}
+            holt-build:build
+          cache-from: type=gha,scope=holt-build-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=holt-build-${{ matrix.arch }}
+
+      - name: Smoke-test the base natively
+        run: |
+          docker run --rm --platform ${{ matrix.platform }} holt-build:build \
+            sh -c "uname -m && python --version && R --version | head -n 1 && \
+                   node --version && npm --version && cargo --version && go version && whoami"
+
+      - name: Report the per-arch digest
+        if: github.event_name != 'pull_request'
+        id: digest
+        run: |
+          digest="$(docker buildx imagetools inspect \
+            ghcr.io/otterlab-bio/holt-build:${{ matrix.arch }}-${GITHUB_SHA} \
+            --format '{{json .Manifest}}' | jq -r '.digest')"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "${{ matrix.platform }} -> $digest"
+
+      - name: Upload the digest for the manifest job
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p digests
+          printf '%s\n' "${{ steps.digest.outputs.digest }}" > "digests/${{ matrix.arch }}"
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: digest-${{ matrix.arch }}
+          path: digests/${{ matrix.arch }}
+          if-no-files-found: error
+
+  manifest:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
     permissions:
       packages: write
       contents: read
     steps:
-      - name: Check Out Repo
-        uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: digests
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -27,26 +117,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v3
-
-      # docker.io/library/archlinux publishes only linux/amd64, so this base
-      # layer cannot be built for arm64. holt-run inherits the limitation and
-      # only publishes amd64 images; arm64 users get the OTTER binaries
-      # directly from the release.
-      - name: Build and push (linux/amd64)
-        id: docker_build
-        uses: docker/build-push-action@v6
-        with:
-          context: ./holt-build
-          platforms: linux/amd64
-          push: true
-          tags: ghcr.io/otterlab-bio/holt-build:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Verify built image
+      - name: Assemble the multi-arch manifest
         run: |
-          docker run --rm ghcr.io/otterlab-bio/holt-build:latest \
-            sh -c "python --version && R --version && node --version && npm --version && cargo --version && go version && whoami"
+          amd64="$(cat digests/digest-amd64/amd64)"
+          arm64="$(cat digests/digest-arm64/arm64)"
+          docker buildx imagetools create \
+            -t ghcr.io/otterlab-bio/holt-build:latest \
+            "ghcr.io/otterlab-bio/holt-build@${amd64}" \
+            "ghcr.io/otterlab-bio/holt-build@${arm64}"
+
+      - name: Verify the published index
+        run: |
+          docker buildx imagetools inspect ghcr.io/otterlab-bio/holt-build:latest
+
+      - name: Job summary
+        if: always()
+        continue-on-error: true
+        run: |
+          {
+            echo '## holt-build'
+            echo ''
+            echo '| Platform | Runner |'
+            echo '| --- | --- |'
+            echo '| linux/amd64 | ubuntu-24.04 |'
+            echo '| linux/arm64 | ubuntu-24.04-arm |'
+            echo ''
+            echo "Manifest: \`ghcr.io/otterlab-bio/holt-build:latest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
