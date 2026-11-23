@@ -134,6 +134,26 @@ docker run -it --name holt-build ghcr.io/otterlab-bio/holt-build:latest
 
 ---
 
+## Following the latest OTTER release
+
+`holt-run` does not pin an OTTER version. At build time
+`holt-run/scripts/install-otter-tools.sh` resolves the newest *stable*
+[OTTER release](https://github.com/otterlab-bio/otter/releases), downloads every
+tool for the target architecture, and verifies it against the release
+`checksums.txt`. The runtime YAML definitions come from the same release, so the
+image can never mix binaries from one version with an environment from another.
+
+The image is rebuilt weekly, and the OTTER release workflow also sends a
+`otter-release` repository dispatch so a new release is picked up immediately.
+To build a reproducible image, pin the release:
+
+```bash
+docker build --build-arg OTTER_VERSION=v1.3.0 -t holt-run ./holt-run
+```
+
+`linux/amd64` and `linux/arm64` are both supported; CI builds and publishes the
+multi-architecture manifest for each release.
+
 ## 🧰 Otter Toolchain
 
 `holt-run` includes all standalone static binary tools released by [otterlab-bio/otter](https://github.com/otterlab-bio/otter), globally available on `PATH`:

@@ -1,6 +1,14 @@
 ARG BASE_IMAGE=ghcr.io/otterlab-bio/holt-build:latest
 FROM ${BASE_IMAGE}
 
+# OTTER toolchain version. "latest" (default) resolves the newest stable
+# otterlab-bio/otter release at build time, so the image follows the OTTER
+# repository instead of hard-coding a version here. Pin a release for a
+# reproducible image:
+#   docker build --build-arg OTTER_VERSION=v1.3.0 -t holt-run .
+ARG OTTER_VERSION=latest
+ARG TARGETARCH
+
 USER root
 
 # 配置 pacman 并行下载
@@ -34,12 +42,20 @@ RUN pacman -S --noconfirm jupyterlab && \
     rm -rf /var/cache/pacman/pkg/* /tmp/*
 
 # 安装 Ark (Posit Dev) - 增强 JupyterLab 的交互开发能力
-RUN cd /tmp && \
-    wget -q https://github.com/posit-dev/ark/releases/download/0.1.222/ark-0.1.222-linux-x64.zip && \
-    unzip -q ark-0.1.222-linux-x64.zip && \
-    mv ark /usr/bin/ && \
-    chmod +x /usr/bin/ark && \
-    ark --install && \
+# 架构跟随构建平台：linux-x64 / linux-arm64
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) ARK_ARCH=x64 ;; \
+      arm64) ARK_ARCH=arm64 ;; \
+      *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    cd /tmp; \
+    zip="ark-0.1.222-linux-${ARK_ARCH}.zip"; \
+    wget -q --tries=5 --timeout=20 "https://github.com/posit-dev/ark/releases/download/0.1.222/${zip}"; \
+    unzip -q "$zip"; \
+    mv ark /usr/bin/; \
+    chmod +x /usr/bin/ark; \
+    ark --install; \
     rm -rf /tmp/ark*
 
 # ===== 阶段 3: 用户管理向导工具 =====
@@ -48,19 +64,17 @@ RUN chmod +x /usr/local/bin/add-user
 
 # ===== 阶段 4: 安装 otter 全套生物信息学工具集 =====
 # 包含: otter, enva, craftmake, xenofilx, pairbam, seq2mat, methx, qctb, fastqcx, matsrun
-ENV OTTER_VERSION=v1.0.0
-RUN mkdir -p /opt/otter/bin /opt/otter/envs && \
-    for tool in otter enva craftmake xenofilx pairbam seq2mat methx qctb fastqcx matsrun; do \
-      echo "Downloading $tool..."; \
-      curl -fL --retry 5 --retry-delay 2 --connect-timeout 20 \
-        "https://github.com/otterlab-bio/otter/releases/download/${OTTER_VERSION}/${tool}-linux-amd64-static" \
-        -o "/usr/local/bin/${tool}"; \
-      chmod +x "/usr/local/bin/${tool}"; \
-      ln -sf "/usr/local/bin/${tool}" "/opt/otter/bin/${tool}"; \
-    done
+# 版本由 OTTER_VERSION 决定（默认 latest），二进制通过发布包的 checksums.txt 校验。
+COPY scripts/install-otter-tools.sh /usr/local/bin/install-otter-tools
+RUN chmod +x /usr/local/bin/install-otter-tools
 
-# 拷贝 otter 环境定义文件
+# 先放入仓库内的环境定义作为回退；若发布包自带 YAML 则以发布包为准。
 COPY envs/ /opt/otter/envs/
+ENV OTTER_VERSION=${OTTER_VERSION}
+# TARGETARCH is set by BuildKit; passing it explicitly keeps the asset choice
+# correct even when the build runs under QEMU emulation.
+RUN ARCH="${TARGETARCH:-amd64}" /usr/local/bin/install-otter-tools && \
+    cat /opt/otter/VERSION
 
 # ===== 阶段 5: 使用 enva 初始化 otter-core 环境 =====
 ENV MAMBA_ROOT_PREFIX=/opt/conda
@@ -92,11 +106,16 @@ RUN chown otter-pup:otter-pup /home/otter-pup/.ssh/authorized_keys && \
     chmod 600 /home/otter-pup/.ssh/authorized_keys
 
 # ===== 阶段 7: 全局安装 AI 开发工具与 uv =====
-RUN npm install -g --include=optional @openai/codex @anthropic-ai/claude-code @anthropic-ai/claude-code-linux-x64 opencode-ai droid && \
+RUN case "${TARGETARCH:-amd64}" in \
+        amd64) CLAUDE_ARCH=x64 ;; \
+        arm64) CLAUDE_ARCH=arm64 ;; \
+        *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac && \
+    npm install -g --include=optional @openai/codex @anthropic-ai/claude-code "@anthropic-ai/claude-code-linux-${CLAUDE_ARCH}" opencode-ai droid && \
     (node "$(npm root -g)/@anthropic-ai/claude-code/install.cjs" || true) && \
-    (if [ -f "$(npm root -g)/@anthropic-ai/claude-code-linux-x64/claude" ]; then \
-       ln -sf "$(npm root -g)/@anthropic-ai/claude-code-linux-x64/claude" /usr/local/bin/claude; \
-       ln -sf "$(npm root -g)/@anthropic-ai/claude-code-linux-x64/claude" /usr/local/bin/claude-code; \
+    (if [ -f "$(npm root -g)/@anthropic-ai/claude-code-linux-${CLAUDE_ARCH}/claude" ]; then \
+       ln -sf "$(npm root -g)/@anthropic-ai/claude-code-linux-${CLAUDE_ARCH}/claude" /usr/local/bin/claude; \
+       ln -sf "$(npm root -g)/@anthropic-ai/claude-code-linux-${CLAUDE_ARCH}/claude" /usr/local/bin/claude-code; \
      elif which claude >/dev/null 2>&1; then \
        ln -sf "$(which claude)" /usr/local/bin/claude-code; \
      fi) && \
@@ -170,6 +189,8 @@ fi
 
 echo "--- Holt 运行环境服务已就绪 ---"
 echo "SSH 访问: ssh otter-pup@localhost -p 2222 (默认密码: otter-pup)"
+echo ""
+echo "OTTER release: $(cat /opt/otter/VERSION 2>/dev/null || echo unknown)"
 echo ""
 echo "内置工具集:"
 echo "  Otter 全套工具: otter, enva, craftmake, xenofilx, pairbam, seq2mat, methx, qctb, fastqcx, matsrun"
