@@ -126,7 +126,7 @@ jobs:
           build-args: |
             OTTER_VERSION=${{ steps.otter.outputs.tag }}
           tags: |
-            ${IMAGE}:${{ matrix.arch }}-${{ github.sha }}
+            ghcr.io/otterlab-bio/holt-run:${{ matrix.arch }}-${{ github.sha }}
             holt-run:build
           cache-from: type=gha,scope=holt-run-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=holt-run-${{ matrix.arch }}
@@ -160,7 +160,7 @@ jobs:
         id: digest
         run: |
           digest="$(docker buildx imagetools inspect \
-            "${IMAGE}:${{ matrix.arch }}-${GITHUB_SHA}" \
+            "ghcr.io/otterlab-bio/holt-run:${{ matrix.arch }}-${GITHUB_SHA}" \
             --format '{{json .Manifest}}' | jq -r '.digest')"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
           echo "${{ matrix.platform }} -> $digest"
