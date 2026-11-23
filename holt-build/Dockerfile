@@ -8,6 +8,16 @@ FROM menci/archlinuxarm:latest
 # 并行编译配置
 COPY makepkg.conf /etc/makepkg.conf
 
+# pacman 7 runs its downloads in an isolated "alpm" user protected by Landlock.
+# BuildKit containers cannot switch to that user or apply the ruleset, so pacman
+# fails with "switching to sandbox user 'alpm' failed". Turn the sandbox off for
+# the build only; it does not affect the runtime configuration. This must run
+# before the first pacman invocation.
+RUN sed -i -e 's/^#DisableSandboxFilesystem/DisableSandboxFilesystem/' \
+           -e 's/^#DisableSandboxSyscalls/DisableSandboxSyscalls/' \
+           /etc/pacman.conf && \
+    grep -q '^DisableSandboxFilesystem' /etc/pacman.conf
+
 # 系统初始化。ALARM (aarch64/armv7) 的 keyring 名为 archlinuxarm，不能沿用
 # 上游 Arch 的 archlinux。
 RUN set -eux; \
