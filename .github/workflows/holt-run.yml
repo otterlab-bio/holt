@@ -142,6 +142,12 @@ jobs:
         run: |
           docker buildx imagetools inspect "${IMAGE}:${{ steps.otter.outputs.tag }}"
 
+      - name: Verify the arm64 image built from the shared Dockerfile
+        if: contains(steps.otter.outputs.platforms, 'arm64') && github.event_name != 'pull_request'
+        run: |
+          docker run --rm --platform linux/arm64 "${IMAGE}:${{ steps.otter.outputs.tag }}" \
+            sh -c "test \"\$(uname -m)\" = aarch64 && otter --version && cat /opt/otter/VERSION"
+
       - name: Job summary
         if: always()
         continue-on-error: true

@@ -1,3 +1,5 @@
+# holt-build is now multi-arch (menci/archlinuxarm), so this image can be
+# built for linux/amd64 and linux/arm64 from the same Dockerfile.
 ARG BASE_IMAGE=ghcr.io/otterlab-bio/holt-build:latest
 FROM ${BASE_IMAGE}
 

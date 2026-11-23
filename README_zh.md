@@ -41,7 +41,7 @@
 
 ```mermaid
 graph TD
-    A[archlinux:latest] --> B[holt-build]
+    A[menci/archlinuxarm:latest] --> B[holt-build]
     B --> C[holt-run]
 
     subgraph "holt-build (基础构建底座)"
@@ -66,7 +66,7 @@ graph TD
 
 | 模块规范 | `holt-build` (基础构建镜像) | `holt-run` (统一运行镜像) |
 | :--- | :--- | :--- |
-| **基础底座** | `archlinux:latest` | `ghcr.io/otterlab-bio/holt-build:latest` |
+| **基础底座** | `menci/archlinuxarm:latest`（amd64 + arm64） | `ghcr.io/otterlab-bio/holt-build:latest` |
 | **默认用户** | `otter-pup` (免密 sudo 权限) | `otter-pup` (免密 sudo 权限) |
 | **编程语言与包管理** | Go, Node.js, npm, Python 3, pip, R, pak, Rust (cargo) | 继承全部基础语言 + Python `uv` |
 | **Otter 工具链** | — | 全套预装 (`otter`, `enva`, `craftmake`, `xenofilx`, `pairbam`, `seq2mat`, `methx`, `qctb`, `fastqcx`, `matsrun`) |

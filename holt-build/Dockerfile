@@ -1,11 +1,24 @@
-FROM archlinux:latest
+# menci/archlinuxarm is a multi-arch image: its amd64 variant is ordinary Arch
+# Linux (geo.mirror.pkgbuild.com), while arm64/armv7 come from Arch Linux ARM.
+# The upstream docker.io/library/archlinux image ships amd64 only, which is why
+# this base exists -- keep it if you need arm64.
+ARG TARGETARCH
+FROM menci/archlinuxarm:latest
 
 # 并行编译配置
 COPY makepkg.conf /etc/makepkg.conf
 
-# 系统初始化
-RUN pacman-key --init && pacman-key --populate archlinux && \
-    pacman -Syu --noconfirm && \
+# 系统初始化。ALARM (aarch64/armv7) 的 keyring 名为 archlinuxarm，不能沿用
+# 上游 Arch 的 archlinux。
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) KEYRING=archlinux ;; \
+      arm64|arm) KEYRING=archlinuxarm ;; \
+      *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    pacman-key --init; \
+    pacman-key --populate "$KEYRING"; \
+    pacman -Syu --noconfirm; \
     pacman -Scc --noconfirm
 
 # 基础开发工具
@@ -38,7 +51,7 @@ RUN set -eux; \
       tar -xzf yay-bin.tar.gz; \
     fi; \
     cd yay-bin; \
-    makepkg -si --noconfirm; \
+    makepkg -si --noconfirm --needed; \
     cd /tmp; \
     rm -rf yay-bin yay-bin.tar.gz
 WORKDIR /

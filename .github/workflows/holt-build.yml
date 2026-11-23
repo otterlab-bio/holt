@@ -27,20 +27,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@v3
 
-      # docker.io/library/archlinux publishes only linux/amd64, so this base
-      # layer cannot be built for arm64. holt-run inherits the limitation and
-      # only publishes amd64 images; arm64 users get the OTTER binaries
-      # directly from the release.
-      - name: Build and push (linux/amd64)
+      # menci/archlinuxarm covers amd64 (plain Arch) and arm64 (ALARM) from one
+      # tag, so the base layer can be published for both architectures.
+      - name: Build and push (linux/amd64, linux/arm64)
         id: docker_build
         uses: docker/build-push-action@v6
         with:
           context: ./holt-build
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/otterlab-bio/holt-build:latest
           cache-from: type=gha
@@ -48,5 +49,7 @@ jobs:
 
       - name: Verify built image
         run: |
-          docker run --rm ghcr.io/otterlab-bio/holt-build:latest \
+          docker run --rm --platform linux/amd64 ghcr.io/otterlab-bio/holt-build:latest \
+            sh -c "python --version && R --version && node --version && npm --version && cargo --version && go version && whoami"
+          docker run --rm --platform linux/arm64 ghcr.io/otterlab-bio/holt-build:latest \
             sh -c "python --version && R --version && node --version && npm --version && cargo --version && go version && whoami"

@@ -41,7 +41,7 @@
 
 ```mermaid
 graph TD
-    A[archlinux:latest] --> B[holt-build]
+    A[menci/archlinuxarm:latest] --> B[holt-build]
     B --> C[holt-run]
 
     subgraph "holt-build (Base Layer)"
@@ -66,7 +66,7 @@ graph TD
 
 | Specification | `holt-build` (Base Image) | `holt-run` (Runtime Workbench) |
 | :--- | :--- | :--- |
-| **Base Image** | `archlinux:latest` | `ghcr.io/otterlab-bio/holt-build:latest` |
+| **Base Image** | `menci/archlinuxarm:latest` (amd64 + arm64) | `ghcr.io/otterlab-bio/holt-build:latest` |
 | **Default User** | `otter-pup` (sudo NOPASSWD enabled) | `otter-pup` (sudo NOPASSWD enabled) |
 | **Languages & Package Managers** | Go, Node.js, npm, Python 3, pip, R, pak, Rust (cargo) | All base languages + Python `uv` |
 | **Otter Tool Suite** | — | Fully pre-installed (`otter`, `enva`, `craftmake`, `xenofilx`, `pairbam`, `seq2mat`, `methx`, `qctb`, `fastqcx`, `matsrun`) |
@@ -151,11 +151,9 @@ To build a reproducible image, pin the release:
 docker build --build-arg OTTER_VERSION=v1.3.0 -t holt-run ./holt-run
 ```
 
-The image is published for `linux/amd64`. The base layer is built from
-`docker.io/library/archlinux`, which publishes no arm64 manifest, so an arm64
-container image cannot be assembled yet. Arm64 users can still run the native
-OTTER binaries from the release, and the installer script itself is
-architecture-aware for the day the base image gains arm64 support.
+The image is published for `linux/amd64` and `linux/arm64`. Both are built from
+one `menci/archlinuxarm` base, which maps `amd64` to ordinary Arch Linux and
+`arm64` to Arch Linux ARM, so the same Dockerfiles cover both architectures.
 
 ## 🧰 Otter Toolchain
 
