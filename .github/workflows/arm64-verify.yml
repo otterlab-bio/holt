@@ -87,12 +87,25 @@ jobs:
             enva create --yaml /tmp/otter-core.yaml --name otter-core --force --clean-cache
             prefix=/opt/conda/envs/otter-core
             test -f "$prefix/conda-meta/history"
-            for tool in samtools bismark bowtie2 STAR fastqc seqkit; do
-              printf "%-10s " "$tool"
-              "$prefix/bin/$tool" --version 2>&1 | head -n 1
+
+            # Compiled binaries must be aarch64. bowtie2/fastqc are wrappers
+            # (Perl / Python), so check the tools that really are ELF.
+            for bin in samtools bismark_genome_preparation STAR; do
+              printf "%-28s " "$bin"
+              file -b "$prefix/bin/$bin" | cut -d, -f1-2
+              file -b "$prefix/bin/$bin" | grep -q aarch64
             done
-            "$prefix/bin/samtools" --version | head -n 1
-            file -b "$prefix/bin/bowtie2" | grep -q aarch64
+
+            # Run through the environment, the way otter does: bowtie2 needs its
+            # packaged Perl modules and fastqc needs the env python3.
+            run() { enva run otter-core -- "$@"; }
+            printf "samtools  "; run samtools --version | head -n 1
+            printf "bismark   "; run bismark --version | head -n 1
+            printf "bowtie2   "; run bowtie2 --version | head -n 1
+            printf "STAR      "; run STAR --version
+            printf "fastqc    "; run fastqc --version | head -n 1
+            printf "seqkit    "; run seqkit version
+            printf "rmats     "; run rmats.py --version 2>&1 | head -n 1
           '
 
       - name: Job summary
