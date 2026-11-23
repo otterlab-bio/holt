@@ -40,6 +40,9 @@ case "$url" in
       exit 0
     fi
     if [ "$tag" = v1.3.0 ]; then
+      # Pad the payload past a pipe buffer so this exercises the same path as
+      # the real API response, where printf used to die of SIGPIPE.
+      padding="$(printf '%4000s' '' | tr ' ' x)"
       # Only list the assets this test actually publishes for arm64.
       names=""
       for f in "$RELEASE_ROOT/$tag"/*; do
@@ -47,7 +50,7 @@ case "$url" in
         case "$b" in checksums.txt|*.yaml) continue ;; esac
         names="$names{\"name\": \"$b\"},"
       done
-      printf '{"tag_name": "%s", "prerelease": false, "assets": [%s]}\n' "$tag" "${names%,}"
+      printf '{"tag_name": "%s", "prerelease": false, "padding": "%s", "assets": [%s]}\n' "$tag" "$padding" "${names%,}"
     else
       printf '{"tag_name": "%s", "prerelease": false, "assets": []}\n' "$tag"
     fi ;;
@@ -107,3 +110,20 @@ echo "latest skips releases that lack the target architecture"
 if run v1.2.2 >/dev/null 2>&1; then
   echo "pinned release without assets was accepted" >&2; exit 1
 fi
+
+# 7. LINK_DIR= disables symlinks instead of silently falling back to /usr/local/bin.
+rm -rf "$tmp/bin" "$tmp/links"; mkdir -p "$tmp/bin"
+PATH="$tmp/mock:$PATH" RELEASE_ROOT="$tmp/release" OTTER_REPO=owner/otter \
+  OTTER_VERSION=v1.3.0 ARCH=arm64 BIN_DIR="$tmp/bin" LINK_DIR= \
+  ENV_DIR="$tmp/envs" /bin/bash "$script" >/dev/null
+test -x "$tmp/bin/otter" && test ! -e /usr/local/bin/otter
+echo "LINK_DIR= installs into BIN_DIR only"
+
+# 8. The default OTTER_VERSION is 'latest'; the workflow used to pin the tag,
+#    which hid a SIGPIPE in release parsing on real API payloads.
+rm -rf "$tmp/bin"; mkdir -p "$tmp/bin"
+env -u OTTER_VERSION PATH="$tmp/mock:$PATH" RELEASE_ROOT="$tmp/release" \
+  OTTER_REPO=owner/otter ARCH=arm64 BIN_DIR="$tmp/bin" LINK_DIR= \
+  ENV_DIR="$tmp/envs" /bin/bash "$script" > "$tmp/latest.log" 2>&1
+test "$(cat "$tmp/VERSION")" = "v1.3.0"
+echo "default OTTER_VERSION resolves the latest stable release"

@@ -19,7 +19,8 @@
 #   OTTER_RELEASES_BASE  Release download base (default https://github.com/$OTTER_REPO/releases/download)
 #   ARCH               Release architecture: amd64 or arm64 (default: detected)
 #   BIN_DIR            Binary install directory (default /opt/otter/bin)
-#   LINK_DIR           Directory that receives PATH symlinks (default /usr/local/bin)
+#   LINK_DIR           Directory that receives PATH symlinks (default /usr/local/bin;
+#                      set LINK_DIR= to install only into BIN_DIR)
 #   ENV_DIR            Environment YAML destination (default /opt/otter/envs)
 #   FALLBACK_ENV_DIR   Copy YAMLs from here if the release has none (optional)
 set -euo pipefail
@@ -29,7 +30,7 @@ OTTER_VERSION="${OTTER_VERSION:-latest}"
 OTTER_API_BASE="${OTTER_API_BASE:-https://api.github.com}"
 OTTER_RELEASES_BASE="${OTTER_RELEASES_BASE:-https://github.com/${OTTER_REPO}/releases/download}"
 BIN_DIR="${BIN_DIR:-/opt/otter/bin}"
-LINK_DIR="${LINK_DIR:-/usr/local/bin}"
+LINK_DIR="${LINK_DIR-/usr/local/bin}"
 ENV_DIR="${ENV_DIR:-/opt/otter/envs}"
 FALLBACK_ENV_DIR="${FALLBACK_ENV_DIR:-}"
 
@@ -63,7 +64,9 @@ release_has_arch() {
   # $1 is the JSON for a single release. Match the exact asset name so a
   # release that predates this architecture is skipped instead of producing a
   # half-populated image.
-  printf '%s\n' "$1" | grep -Fq "\"name\": \"otter-linux-${ARCH}-static\""
+  # A herestring keeps grep from closing the pipe early: with pipefail a large
+  # release JSON made printf die of SIGPIPE and the lookup fail.
+  grep -Fq -- "\"name\": \"otter-linux-${ARCH}-static\"" <<< "$1"
 }
 
 resolve_version() {
