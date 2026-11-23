@@ -125,14 +125,16 @@ jobs:
           load: ${{ github.event_name == 'pull_request' }}
           build-args: |
             OTTER_VERSION=${{ steps.otter.outputs.tag }}
+          # Only the registry tag is listed: a bare local name would be
+          # pushed to Docker Hub on publish runs.
           tags: |
             ghcr.io/otterlab-bio/holt-run:${{ matrix.arch }}-${{ github.sha }}
-            holt-run:build
           cache-from: type=gha,scope=holt-run-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=holt-run-${{ matrix.arch }}
 
       - name: Verify the image natively
         run: |
+          docker tag ghcr.io/otterlab-bio/holt-run:${{ matrix.arch }}-${{ github.sha }} holt-run:build
           docker run --rm --platform ${{ matrix.platform }} holt-run:build \
             sh -c "uname -m && otter --version && enva --version && \
                    test \"\$(cat /opt/otter/VERSION)\" = '${{ steps.otter.outputs.tag }}' && \
@@ -140,6 +142,7 @@ jobs:
 
       - name: Create otter-core and run the toolchain natively
         run: |
+          docker tag ghcr.io/otterlab-bio/holt-run:${{ matrix.arch }}-${{ github.sha }} holt-run:build
           docker run --rm --platform ${{ matrix.platform }} holt-run:build bash -ec '
             set -e
             cp /opt/otter/envs/otter-core.yaml /tmp/otter-core.yaml

@@ -63,14 +63,16 @@ jobs:
           # Pull requests build but never publish.
           push: ${{ github.event_name != 'pull_request' }}
           load: ${{ github.event_name == 'pull_request' }}
+          # Only the registry tag is listed: a bare local name would be
+          # pushed to Docker Hub on publish runs.
           tags: |
             ghcr.io/otterlab-bio/holt-build:${{ matrix.arch }}-${{ github.sha }}
-            holt-build:build
           cache-from: type=gha,scope=holt-build-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=holt-build-${{ matrix.arch }}
 
       - name: Smoke-test the base natively
         run: |
+          docker tag ghcr.io/otterlab-bio/holt-build:${{ matrix.arch }}-${{ github.sha }} holt-build:build
           docker run --rm --platform ${{ matrix.platform }} holt-build:build \
             sh -c "uname -m && python --version && R --version | head -n 1 && \
                    node --version && npm --version && cargo --version && go version && whoami"
