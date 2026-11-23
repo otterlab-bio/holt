@@ -89,11 +89,12 @@ jobs:
             test -f "$prefix/conda-meta/history"
 
             # Compiled binaries must be aarch64. bowtie2/fastqc are wrappers
-            # (Perl / Python), so check the tools that really are ELF.
-            for bin in samtools bismark_genome_preparation STAR; do
-              printf "%-28s " "$bin"
-              file -b "$prefix/bin/$bin" | cut -d, -f1-2
-              file -b "$prefix/bin/$bin" | grep -q aarch64
+            # (Perl / Python) and bismark_genome_preparation is a symlink, so
+            # follow links and check the tools that really are ELF.
+            for bin in samtools bismark STAR; do
+              printf "%-10s " "$bin"
+              file -L -b "$prefix/bin/$bin" | cut -d, -f1-2
+              file -L -b "$prefix/bin/$bin" | grep -q aarch64
             done
 
             # Run through the environment, the way otter does: bowtie2 needs its
