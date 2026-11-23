@@ -5,19 +5,64 @@ on:
     workflows: ["Build and Publish holt-build"]
     types:
       - completed
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:
+  # Sent by the OTTER release workflow after a new release is published.
+  repository_dispatch:
+    types: [ otter-release ]
+  # The image follows the newest stable OTTER release, so rebuild weekly even
+  # when this repository itself does not change.
+  schedule:
+    - cron: '0 7 * * 1'
+  push:
+    branches: [ main ]
+    paths:
+      - 'holt-run/**'
+      - '.github/workflows/holt-run.yml'
+  pull_request:
+    paths:
+      - 'holt-run/**'
+      - '.github/workflows/holt-run.yml'
+
+permissions:
+  contents: read
 
 jobs:
-  docker:
+  test:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
-    permissions:
-      packages: write
-      contents: read
     steps:
       - name: Check Out Repo
         uses: actions/checkout@v4
 
+      - name: Test the OTTER installer scripts offline
+        run: |
+          bash holt-run/tests/install-otter-tools.test.sh
+          bash holt-run/tests/resolve-platforms.test.sh
+
+      - name: Check the Dockerfile has no hard-coded OTTER version
+        run: |
+          if grep -nE '^[[:space:]]*(ENV|ARG)[[:space:]]+OTTER_VERSION=(v?[0-9]|daily-)' holt-run/Dockerfile; then
+            echo 'holt-run/Dockerfile must not pin an OTTER version; use --build-arg OTTER_VERSION.' >&2
+            exit 1
+          fi
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    permissions:
+      packages: write
+      contents: read
+    env:
+      OTTER_REPO: otterlab-bio/otter
+      IMAGE: ghcr.io/otterlab-bio/holt-run
+    steps:
+      - name: Check Out Repo
+        uses: actions/checkout@v4
+
+      # The holt-build base image is private, so authentication is required even
+      # on pull requests. Pull requests never push; only the publish job does.
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -25,21 +70,78 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
-        id: buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push
-        id: docker_build
+      - name: Resolve the OTTER release and the platforms it ships
+        id: otter
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="$(curl -fsSL --retry 5 --retry-delay 2 \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/${OTTER_REPO}/releases/latest" \
+            | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+          test -n "$tag" || { echo 'could not resolve the latest OTTER release' >&2; exit 1; }
+          platforms="$(GITHUB_TOKEN="$GITHUB_TOKEN" bash holt-run/scripts/resolve-platforms.sh --version "$tag")"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "platforms=$platforms" >> "$GITHUB_OUTPUT"
+          echo "Building ${tag} for ${platforms}"
+
+      - name: Build every platform the release ships
         uses: docker/build-push-action@v6
         with:
           context: ./holt-run
-          push: true
-          tags: ghcr.io/otterlab-bio/holt-run:latest
+          platforms: ${{ steps.otter.outputs.platforms }}
+          # Pull requests build the image to prove it works, but never publish.
+          push: ${{ github.event_name != 'pull_request' }}
+          load: false
+          build-args: |
+            OTTER_VERSION=${{ steps.otter.outputs.tag }}
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ steps.otter.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Verify built image
+      - name: Build a loadable amd64 image for the smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: ./holt-run
+          platforms: linux/amd64
+          push: false
+          load: true
+          build-args: |
+            OTTER_VERSION=${{ steps.otter.outputs.tag }}
+          tags: holt-run:smoke
+          cache-from: type=gha
+
+      - name: Verify the image starts and reports the resolved release
         run: |
-          docker run --rm ghcr.io/otterlab-bio/holt-run:latest \
-            sh -c "otter --version && enva --version && jupyter-lab --version && (claude --version || claude-code --version) && whoami"
+          docker run --rm --platform linux/amd64 holt-run:smoke \
+            sh -c "otter --version && enva --version && \
+                   test \"\$(cat /opt/otter/VERSION)\" = '${{ steps.otter.outputs.tag }}' && \
+                   jupyter-lab --version && (claude --version || claude-code --version) && whoami"
+
+      - name: Verify the published multi-arch manifest
+        if: github.event_name != 'pull_request'
+        run: |
+          docker buildx imagetools inspect "${IMAGE}:${{ steps.otter.outputs.tag }}"
+
+      - name: Job summary
+        if: always()
+        continue-on-error: true
+        run: |
+          {
+            echo '## holt-run'
+            echo ''
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| OTTER release | ${{ steps.otter.outputs.tag || 'unresolved' }} |"
+            echo "| Platforms | ${{ steps.otter.outputs.platforms || 'unresolved' }} |"
+            echo "| Published | ${{ github.event_name != 'pull_request' }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

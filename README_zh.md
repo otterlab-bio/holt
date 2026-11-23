@@ -134,6 +134,23 @@ docker run -it --name holt-build ghcr.io/otterlab-bio/holt-build:latest
 
 ---
 
+## 跟随最新 OTTER 版本
+
+`holt-run` 不锁定 OTTER 版本。构建时
+`holt-run/scripts/install-otter-tools.sh` 解析最新的**稳定版**
+[OTTER release](https://github.com/otterlab-bio/otter/releases)，按目标架构下载全部工具，
+并用该 release 的 `checksums.txt` 逐一校验。运行环境的 YAML 也取自同一个 release，
+因此镜像不会出现二进制与运行环境版本错配。
+
+镜像每周重建一次；OTTER 发布新版本时，release 工作流还会发送 `otter-release`
+repository dispatch，让镜像立即跟进。如需可复现镜像，可显式固定版本：
+
+```bash
+docker build --build-arg OTTER_VERSION=v1.3.0 -t holt-run ./holt-run
+```
+
+支持 `linux/amd64` 与 `linux/arm64`，CI 会为每个版本构建并推送多架构 manifest。
+
 ## 🧰 Otter 工具链集成
 
 `holt-run` 完整内置了 [otterlab-bio/otter](https://github.com/otterlab-bio/otter) 官方发布的独立静态二进制工具，所有工具均已加入系统全局 `PATH`：

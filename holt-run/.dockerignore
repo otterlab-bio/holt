@@ -1,0 +1,4 @@
+# Only envs/ and scripts/install-otter-tools.sh are copied into the image.
+tests/
+.git
+.gitignore
